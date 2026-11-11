@@ -63,12 +63,10 @@ It holds one puddle: one extension with one bounded purpose.
   puddle-tooling. Every workflow in `workflows/` needs `maxReruns` and
   `maxWallClock` tags, and a workflow that reads another model's data with
   `data.latest` needs an entry in `contracts.ts`.
-- `make publish VISIBILITY=private DRY_RUN=1` runs the publish dry run. Never
+- `make publish VISIBILITY=public DRY_RUN=1` runs the publish dry run. Never
   push with `--yes`; `VISIBILITY` must equal `visibility:` in `manifest.yaml`.
 - Review reports live in `swamp-extension-review/` and are committed with the
   version they review.
-- `example.ts`, its test and `workflows/workflow-example.yaml` are
-  placeholders. Replace them; do not extend them.
 - A web UI is Preact rendered on the server, written with `h()` in `.ts`,
   because the swamp registry rejects `.tsx`. Capture's page works this way
   ([ADR-006][ui]).
@@ -115,20 +113,12 @@ Anything on this list, or anything beyond the purpose above, needs a new
 spec. Do not add it here, and do not add permissions or secrets the
 settings above do not name.
 
-## Finishing the draft
+## The build
 
-1. Replace the `run` stub in `extensions/models/merged_cleanup.ts` with the
-   real behaviour. Keep the argument names: the workflow and the run form
-   depend on them.
-2. Give `ResultSchema.items` the shape of the output above, and add tests for
-   the behaviour to `extensions/models/merged_cleanup_test.ts`. Leave the
-   generated tests as they are: they stub `run`, so they keep passing. Tests
-   of the behaviour call `run` directly with working settings.
-3. If the tests need permissions (`--allow-read`, `--allow-net`, …), add the
-   same flags to the "Test it" command in `README.md` and to the test commands
-   in `.github/workflows/ci.yml`, and, if the repo has a `Makefile`, to its
-   `test` target.
-4. `deno check` and `deno test` must pass before review.
+The draft is finished: `extensions/models/merged_cleanup.ts` has `check`,
+`clean` and a read-only `run`, and the tests need the permissions in the
+Makefile's `test` target, `README.md` and `.github/workflows/ci.yml`. Keep
+the argument names: the workflows and the run form depend on them.
 
 A web UI is Preact rendered on the server, written with `h()` in `.ts`,
 because the swamp registry rejects `.tsx`. The Factory's viewer works this
@@ -141,10 +131,10 @@ These phrases were agreed for this app:
 - "22 is merged": After one yes: PR 22: worktree removed, local branch deleted, origin branch deleted, main fast-forwarded (each step shown as done, already done, skipped with why, or failed with the error), then a one-line summary.
 - "merged": After one yes: the same steps for each of the latest 3 merged PRs that still have a worktree at their head, then a one-line summary; or "Nothing to clean up" when there are none.
 
-No recipe was drafted, so they don't reach it yet. The phrase "merged" doesn't show where the piece "pr" goes.
-
-If the app can answer them with one method after all, write
-`workflows/workflow-merged-cleanup-recipe.yaml` by hand, list it in `manifest.yaml` and
-label the manifest `puddlerouter-recipe`. Readiness then checks it.
+No recipe was drafted, as one recipe can't take both phrases. Two were
+written by hand: `workflows/workflow-merged-cleanup-recipe.yaml` ("N is
+merged") and `workflows/workflow-merged-cleanup-latest-recipe.yaml` (a bare
+"merged"). Both are listed in `manifest.yaml`, which is labelled
+`puddlerouter-recipe`, and readiness checks them.
 
 <!-- END puddleworks-factory app section -->
