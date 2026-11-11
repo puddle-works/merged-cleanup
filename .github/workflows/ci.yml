@@ -25,7 +25,7 @@ jobs:
   publish:
     uses: puddle-works/puddle-tooling/.github/workflows/publish.yml@v0.1.1
     with:
-      visibility: private # must equal visibility: in manifest.yaml
+      visibility: public # must equal visibility: in manifest.yaml
       dry-run: true # false pushes
       tests: deno test --allow-read --allow-write --allow-run=git extensions/models/
       tooling-ref: v0.1.1
