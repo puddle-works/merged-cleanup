@@ -115,7 +115,7 @@ Deno.test("cleanup_branch_heads lists local branches and origin's, each with its
     Object.fromEntries(
       (l as { name: string; head: string }[]).map((b) => [b.name, b.head]),
     );
-  assertEquals(byName(out.local), {
+  assertEquals(byName(out.localBranches), {
     [r.trunk]: trunk,
     "me/feature": wt.head,
     "me/local-only": trunk,
@@ -123,7 +123,7 @@ Deno.test("cleanup_branch_heads lists local branches and origin's, each with its
   // origin's come from ls-remote, not from (maybe stale) tracking refs.
   await ok(r.other, "push", "-q", "origin", "--delete", "me/feature");
   const after = await call("cleanup_branch_heads", r.main);
-  assertEquals(byName(after.origin), { [r.trunk]: trunk });
+  assertEquals(byName(after.originBranches), { [r.trunk]: trunk });
   assertEquals(await ok(r.main, "for-each-ref"), before);
 });
 

@@ -319,8 +319,8 @@ export async function inspect(
     );
   const branchHeads = () =>
     heads ??= attrs(run, GIT, "cleanup_branch_heads", at).then((a) => ({
-      local: toMap(a.local),
-      origin: toMap(a.origin),
+      local: toMap(a.localBranches),
+      origin: toMap(a.originBranches),
     }));
   /** The PR's branch left at its head with no worktree, if just one is. */
   const leftBehind = async (

@@ -72,9 +72,9 @@ const BranchHeadSchema = z.object({ name: z.string(), head: z.string() });
 const BranchHeadsSchema = z.object({
   repoPath: z.string(),
   /** Local branches, without `refs/heads/`. */
-  local: z.array(BranchHeadSchema),
+  localBranches: z.array(BranchHeadSchema),
   /** origin's branches as origin has them now. */
-  origin: z.array(BranchHeadSchema),
+  originBranches: z.array(BranchHeadSchema),
   listedAt: z.iso.datetime(),
 });
 
@@ -227,13 +227,13 @@ export const extension = {
         }
         const data = {
           repoPath,
-          local: heads(local.stdout, false),
-          origin: heads(remote.stdout, true),
+          localBranches: heads(local.stdout, false),
+          originBranches: heads(remote.stdout, true),
           listedAt: new Date().toISOString(),
         };
         ctx.logger.info("Found {local} local branches and {origin} on origin", {
-          local: data.local.length,
-          origin: data.origin.length,
+          local: data.localBranches.length,
+          origin: data.originBranches.length,
         });
         const handle = await ctx.writeResource(
           "cleanupBranchHeads",
