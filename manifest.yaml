@@ -4,7 +4,7 @@ version: "2026.11.11.1"
 description: "For merged PRs in the repository of the current directory, report whether each one's worktree and branches are safe to clean up (check), and clean up those that are (clean): remove the worktree, delete the local branch and origin's branch with a lease on the PR's head, and fast-forward main."
 repository: "https://github.com/puddle-works/merged-cleanup"
 license: MIT
-visibility: private
+visibility: public
 labels:
   - effects-write
   - puddlerouter-recipe
