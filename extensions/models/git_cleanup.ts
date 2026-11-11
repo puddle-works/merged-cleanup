@@ -146,7 +146,7 @@ interface Context {
 const repoPathOf = (ctx: Context) =>
   typeof ctx.globalArgs.repoPath === "string" ? ctx.globalArgs.repoPath : ".";
 
-/** The `@swamp/git` extension: the three methods and their resources. */
+/** The `@swamp/git` extension: the four methods and their resources. */
 export const extension = {
   type: "@swamp/git",
   resources: {

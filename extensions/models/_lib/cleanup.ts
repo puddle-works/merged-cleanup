@@ -46,8 +46,7 @@ const GITHUB = { modelType: "@webframp/github", name: "github" };
 
 /** Most PRs one run may name. */
 const MAX_NUMBERS = 5;
-/** Merged PRs looked at when none are named, newest first. */
-/** How many merged PRs "none named" looks at. */
+/** How many merged PRs "none named" looks at, newest first. */
 export const LATEST = 3;
 /** Worktrees checked for commits after a PR's head. */
 const MAX_ANCESTRY = 10;
@@ -570,8 +569,15 @@ const PRIMARY_STEPS: Step["step"][] = [
  */
 export async function act(
   found: Inspection,
-  run: RunModel,
+  runModel: RunModel,
 ): Promise<Item[]> {
+  // A call that throws is that call failing, so one step fails and the rest
+  // are still reported (and the result still written).
+  const run: RunModel = (call) =>
+    runModel(call).catch((e) => ({
+      ok: false as const,
+      error: { message: message(e) },
+    }));
   const main = found.mainCheckout;
   const at = { repoPath: main };
   const short = (sha: string) => sha.slice(0, 7);

@@ -120,7 +120,6 @@ interface MethodContext {
   ) => Promise<{ name: string }>;
 }
 
-/** A method that runs `behaviour[name]` and writes its items as `instance`. */
 /** The PRs a run was asked about, for its first log line. */
 function asked(args: RunArgs): string {
   let numbers: number[];
@@ -134,6 +133,7 @@ function asked(args: RunArgs): string {
     : `the latest ${LATEST} merged PRs`;
 }
 
+/** A method that runs `behaviour[name]` and writes its items as `instance`. */
 function method(
   name: "run" | "check" | "clean",
   instance: string,

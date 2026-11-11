@@ -527,6 +527,24 @@ Deno.test("a pull that fails for another reason (network) is failed, not skipped
   assertMatch(s.detail, /Could not resolve host/);
 });
 
+Deno.test("a call that throws mid-clean is that step failed, and the rest still reported", async () => {
+  await using r = await repos();
+  const wt = await mergedPr(r);
+  const real = fakeSwamp(r.main, { 22: merged(wt.head) });
+  const items = await clean(
+    { pr: 22, prs: "" },
+    (call) =>
+      call.method === "cleanup_delete_remote_branch"
+        ? Promise.reject(new Error("swamp went away"))
+        : real(call),
+  );
+  const s = items[0].steps.find((s) => s.step === "delete origin branch")!;
+  assertEquals(s.status, "failed");
+  assertMatch(s.detail, /swamp went away/);
+  assertEquals(statuses(items[0])["remove worktree"], "done");
+  assertEquals(statuses(items[0])["fast-forward main"], "done");
+});
+
 // ---- AC8 --------------------------------------------------------------------
 
 Deno.test("AC8: primary: the main checkout is switched to main, fast-forwarded, the branch deleted both places", async () => {

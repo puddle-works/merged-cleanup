@@ -6,10 +6,10 @@ For merged PRs in the repository of the current directory, report whether each o
 
 Your builder will give you a one-line command to run it. It asks for the values below.
 
-| What to enter | Kind | Default |
-|---|---|---|
-| A PR number to check or clean up; 0 means none named. | integer | `0` |
-| Up to 5 more PR numbers, comma-separated, digits only; together with pr at most 5. With none named, the latest 3 merged PRs that still have a worktree at their head. | string | empty |
+| Input | What to enter | Kind | Default |
+|---|---|---|---|
+| `pr` | A PR number to check or clean up; 0 means none named. | integer | `0` |
+| `prs` | Up to 5 more PR numbers, comma-separated, digits only; together with pr at most 5. With none named, the latest 3 merged PRs that still have a worktree at their head. | string | empty |
 
 **You get:** Per PR: its number, title, verdict (clean, primary, dirty, locked, ahead, absent, open, closed, error), worktree, branch and a one-line reason; for clean, each step (remove worktree, delete local branch, delete origin branch, fast-forward main) as done, already done, skipped with why, or failed with the error; then a one-line summary, or "Nothing to clean up" when there is none.
 
