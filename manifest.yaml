@@ -1,12 +1,24 @@
 manifestVersion: 1
-name: "@puddleworks/puddle-template"
-version: "2026.10.26.1"
-description: "Placeholder extension from the puddle template. Replaced by the puddle's own."
-visibility: private
+name: "@puddleworks/merged-cleanup"
+version: "2026.11.11.1"
+description: "For merged PRs in the repository of the current directory, report whether each one's worktree and branches are safe to clean up (check), and clean up those that are (clean): remove the worktree, delete the local branch and origin's branch with a lease on the PR's head, and fast-forward main."
+repository: "https://github.com/puddle-works/merged-cleanup"
+license: MIT
+visibility: public
+labels:
+  - effects-write
+  - puddlerouter-recipe
 additionalFiles:
   - README.md
   - LICENSE
 models:
-  - example.ts
+  - merged_cleanup.ts
+  - git_cleanup.ts
+  - github_cleanup.ts
 workflows:
-  - workflow-example.yaml
+  - workflow-merged-cleanup.yaml
+  - workflow-merged-cleanup-recipe.yaml
+  - workflow-merged-cleanup-latest-recipe.yaml
+dependencies:
+  - "@swamp/git"
+  - "@webframp/github"

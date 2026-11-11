@@ -1,0 +1,146 @@
+{
+  "format": "puddleworks.dev/outcome-spec/v1",
+  "request": {
+    "id": "2c4c963a-b14d-403f-9b1f-2bdabbc71c19",
+    "title": "Clean up after a merged PR",
+    "initialDescription": "When I say a PR is merged (\"merged\", \"22 is merged\"), remove the worktree it was built in, delete its branch locally and on origin, and pull main, safely and only after I say yes. Today Claude does this by hand from puddlerouter's read-only hint.",
+    "currentProcess": "puddlerouter's merged check (_lib/merged.ts) reads the PR and worktree state and writes the steps for Claude, who runs git worktree remove, git branch -d, git push origin --delete and git pull by hand. Orca removes the worktree and local branch late and never the remote branch.",
+    "url": "http://127.0.0.1:3002/requests/2c4c963a-b14d-403f-9b1f-2bdabbc71c19"
+  },
+  "specification": {
+    "version": 2,
+    "problemStatement": "When a PR merges, I type \"merged\" or \"22 is merged\" and Claude cleans up by hand: it removes the worktree the PR was built in, deletes the branch locally and on origin, and pulls main. puddlerouter can already check this read-only (_lib/merged.ts in puddlerouter) and give Claude the steps as a hint, but nothing performs them, and puddlerouter only routes, so the clean-up must live in its own extension. Orca removes a merged PR's worktree and local branch itself, but late, and never deletes the remote branch, so a clean-up has to cope with steps already done.",
+    "desiredOutcome": "A swamp extension, merged-cleanup, with two methods, and a recipe in @puddleworks/recipes that calls it. check reads only: for the PRs named (or, with none named, the latest merged PRs) in the repository of the current directory, it says whether each is merged and whether its worktree is safe to remove, as puddlerouter's merged check does today. clean writes: for each PR that check finds safe, it removes the worktree, deletes the local branch, deletes the branch on origin and fast-forwards main in the main checkout, checking again before each step and stopping that PR's steps when anything has changed. The recipe answers \"merged\" and \"N is merged\" by running clean behind the existing ask-once gate and showing its result.",
+    "scope": {
+      "in": [
+        "check: the verdicts puddlerouter gives today, per PR: clean, primary, dirty, locked, ahead, absent, open, closed, error, with the worktree, branch and a one-line reason",
+        "check and clean take a list of up to 5 PR numbers; an empty list means the latest 3 merged PRs that still have a worktree at their head",
+        "clean acts only on PRs whose verdict is clean (worktree at the PR's head, no uncommitted changes, not locked) or primary (the main checkout is on the PR's branch at its head, with no uncommitted changes)",
+        "clean, for a clean verdict: remove the worktree, delete the local branch, delete the remote branch on origin, then fast-forward main in the main checkout once at the end",
+        "clean, for a primary verdict: switch the main checkout to main, fast-forward it, delete the local branch and the remote branch",
+        "clean checks again before each step: the worktree is still at the PR's head with no uncommitted changes before it is removed, and origin's branch is still at the PR's head before it is deleted",
+        "clean treats a step that is already done (the worktree or a branch already gone, for example because Orca removed it) as done, not as an error",
+        "clean's result lists, per PR, each step with done, already done, skipped (and why) or failed (and the error), and a short summary line",
+        "The extension's registry labels include effects-write, so @puddleworks/recipes asks once before running clean",
+        "The recipe in @puddleworks/recipes: it matches \"merged\" and \"N is merged\", passes the PR number (or none) to clean, asks once before running it, and shows clean's per-PR steps and summary line"
+      ],
+      "out": [
+        "Merging, closing or approving PRs",
+        "Routing turns and the ask-once gate itself: those stay in puddlerouter and @puddleworks/recipes; this request only adds the recipe that uses the gate",
+        "Removing puddlerouter's own merged check (_lib/merged.ts) and its tests once the recipe is live (follow-up work in puddlerouter)",
+        "Removing worktrees that are dirty, locked, ahead of the PR's head, or not at the head of a merged PR",
+        "Any force: no git worktree remove --force, no git branch -D, no plain --force push",
+        "Repositories other than the one the current directory is in, and remotes other than origin",
+        "Linking, repointing or otherwise changing Orca worktree lineage"
+      ]
+    },
+    "constraints": [
+      "Built as its own swamp extension in its own repo, published privately as @puddleworks/merged-cleanup; the recipe is added to @puddleworks/recipes",
+      "Reads and writes git through @swamp/git and reads GitHub through @webframp/github where they have the method; anything they lack is added as a small method in this extension, not a shell wrapper",
+      "The remote branch is deleted only with a lease on the PR's head commit (git push --force-with-lease=<branch>:<head> origin --delete <branch>), so a branch someone has pushed to since is never deleted",
+      "Main is only ever fast-forwarded (--ff-only); if the main checkout has uncommitted changes or cannot fast-forward, that step is skipped and the reason given",
+      "No commit can be orphaned: a worktree is removed only when its HEAD is the merged PR's head commit",
+      "Never takes turn text as an input; inputs are PR numbers only"
+    ],
+    "assumptions": [
+      "Worktrees are removed with git worktree remove (no --force); Orca notices a removed worktree by itself",
+      "The repository's origin is on GitHub and gh is signed in, as @webframp/github needs",
+      "The default branch is main (or master when the main checkout is on master)",
+      "check keeps the behaviour of puddlerouter's _lib/merged.ts, so that file and its tests can move here and be removed from puddlerouter afterwards"
+    ],
+    "acceptanceCriteria": [
+      {
+        "id": "AC1",
+        "text": "check on a merged PR whose worktree is at the PR's head with no uncommitted changes reports clean, and leaves the worktree, both branches and main exactly as they were"
+      },
+      {
+        "id": "AC2",
+        "text": "clean on that PR removes the worktree, deletes the local branch, deletes the branch on origin and fast-forwards main in the main checkout, and its result lists all four steps as done"
+      },
+      {
+        "id": "AC3",
+        "text": "clean on a PR whose verdict is dirty, locked, ahead, absent, open, closed or error changes nothing for that PR and says why"
+      },
+      {
+        "id": "AC4",
+        "text": "If a new commit or an uncommitted change appears in the worktree after check, clean does not remove it, skips that PR's remaining steps and says why"
+      },
+      {
+        "id": "AC5",
+        "text": "If origin's branch has moved past the PR's head, clean does not delete it and says so"
+      },
+      {
+        "id": "AC6",
+        "text": "If the worktree or the local branch is already gone when clean runs, clean reports that step as already done and carries on with the rest"
+      },
+      {
+        "id": "AC7",
+        "text": "If the main checkout has uncommitted changes or cannot fast-forward, clean leaves it untouched and reports the pull as skipped; the other steps still run"
+      },
+      {
+        "id": "AC8",
+        "text": "For a primary verdict, clean switches the main checkout to main, fast-forwards it and deletes the branch locally and on origin"
+      },
+      {
+        "id": "AC9",
+        "text": "With no PR numbers, check and clean consider only the latest 3 merged PRs, and only those that still have a worktree at their head"
+      },
+      {
+        "id": "AC10",
+        "text": "The published extension carries the effects-write label, and @puddleworks/recipes' sync classes it as a write"
+      },
+      {
+        "id": "AC11",
+        "text": "In @puddleworks/recipes, \"22 is merged\" asks once, then runs clean for PR 22 and shows its per-step result and summary line"
+      },
+      {
+        "id": "AC12",
+        "text": "\"merged\" with no number runs clean for the latest 3 merged PRs that still have a worktree at their head, and says there is nothing to clean up when there are none"
+      },
+      {
+        "id": "AC13",
+        "text": "Saying no at the ask-once gate runs nothing and changes nothing"
+      }
+    ],
+    "recipe": {
+      "examples": [
+        {
+          "phrase": "22 is merged",
+          "answer": "After one yes: PR 22: worktree removed, local branch deleted, origin branch deleted, main fast-forwarded (each step shown as done, already done, skipped with why, or failed with the error), then a one-line summary."
+        },
+        {
+          "phrase": "merged",
+          "answer": "After one yes: the same steps for each of the latest 3 merged PRs that still have a worktree at their head, then a one-line summary; or \"Nothing to clean up\" when there are none."
+        }
+      ],
+      "pieces": [
+        {
+          "name": "pr",
+          "shape": "int"
+        }
+      ],
+      "whenEmpty": "With no PR number, clean considers the latest 3 merged PRs that still have a worktree at their head; when there are none, the recipe says there is nothing to clean up and asks nothing.",
+      "candidateExtensions": [
+        "@swamp/git",
+        "@webframp/github"
+      ]
+    }
+  },
+  "agreement": {
+    "agreedBy": {
+      "name": "Mark Ellens",
+      "email": "redacted@example.com"
+    },
+    "agreedAt": "2026-10-29T17:02:45.708Z",
+    "specHash": "9442f5b008d8f5d6f1939c6c27cbf3ea7a52585995f3a795ee526ab50e937ca9"
+  },
+  "participants": [
+    {
+      "role": "outcome_owner",
+      "name": "Mark Ellens",
+      "email": "redacted@example.com"
+    }
+  ],
+  "openQuestions": [],
+  "exportedAt": "2026-10-29T23:28:10.783Z"
+}

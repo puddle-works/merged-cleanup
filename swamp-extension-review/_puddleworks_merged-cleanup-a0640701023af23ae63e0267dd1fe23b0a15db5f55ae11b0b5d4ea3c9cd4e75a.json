@@ -1,0 +1,82 @@
+{
+  "extension": "@puddleworks/merged-cleanup",
+  "version": "2026.11.11.1",
+  "reviewedAt": "2026-11-11T16:27:18Z",
+  "dimensions": [
+    {
+      "id": "credentials-secrets",
+      "verdict": "pass",
+      "note": "No settings, vault references or secrets in the models. gh and git use the environment's own auth (gh signed in, git credentials); nothing reads Deno.env or a token. The tracked vaults/local_encryption YAML holds only config (auto_generate), no key. CI passes SWAMP_API_KEY/SWAMP_SIGNIN_TOKEN only to the reusable publish job, with contents: read."
+    },
+    {
+      "id": "logging-quality",
+      "verdict": "pass",
+      "note": "merged_cleanup logs on entry (method and PRs asked), one line per PR and the summary; each added git/github method logs before acting and when done. All use {placeholder} props, no interpolation. Nothing sensitive is logged; PR titles appear only for merged PRs."
+    },
+    {
+      "id": "error-handling",
+      "verdict": "pass",
+      "note": "Input (prNumbers, BranchName, 40-hex expect, owner/name repo) and a non-GitHub origin throw before any call or writeResource. Inside clean each runModel failure or throw becomes that step's failed/skipped status with git's message (by design: the spec wants per-step results), and the result is still written. Lease refusal (stale info) and non-fast-forward are distinguished from network/other failures (failed, not skipped). is_ancestor separates unknown-commit from other errors. gh errors carry exit code and stderr."
+    },
+    {
+      "id": "testing-completeness",
+      "verdict": "pass",
+      "note": "make test: 84 passed, 0 failed; deno check, fmt --check and lint clean. Tests run on real temp git repos with a bare origin and cover every AC1-AC9 path plus failures (network pull, thrown call, unmerged -d refusal, unknown head, bad input, non-GitHub origin) and a no-force assertion over all calls. Hand-written contexts rather than createModelTestContext. Caveat: the @swamp/git built-ins (status, remove_worktree, branch, pull, is_ancestor, config) are fakes in fixture_test.ts whose parity with @swamp/git 2026.10.23.1 is asserted in the README and a manual real run, not by a test."
+    },
+    {
+      "id": "idempotency-resilience",
+      "verdict": "pass",
+      "note": "Worktree, local branch and origin branch already gone are reported as already done (cleanup_delete_branch probes with rev-parse, cleanup_delete_remote_branch with ls-remote, remove_worktree's alreadyAbsent); a clean that stopped part-way is finished by running clean again (tested). Every write step is re-checked first (worktree head/branch/lock/clean; origin via the lease), so interruption leaves only safe partial states."
+    },
+    {
+      "id": "api-contracts",
+      "verdict": "pass",
+      "note": "No HTTP; GitHub is read through gh. gh pr view/list JSON is validated with zod (state enum, headRefOid, headRefName, mergedAt datetime) and malformed rows are dropped or raise a named error. gh pr list is capped at 30 by latest activity and reports truncated=true when gh returned the cap; sorted by mergedAt afterwards."
+    },
+    {
+      "id": "resource-management",
+      "verdict": "pass",
+      "note": "Deno.Command(...).output() with stdin null collects and closes all pipes on every path; no files or temp dirs are created by the models. Tests dispose their temp repos with await using. No cloud resources created."
+    },
+    {
+      "id": "published-surface-hygiene",
+      "verdict": "pass",
+      "note": "Checked README, LICENSE (additionalFiles), workflows and test fixtures, and the rest of the repo for public visibility. Fixtures use github.com/acme/widgets and test@example.com. Workflow recipe tags and CLAUDE.md carry the Capture request URL on loopback 127.0.0.1:3002 (no real host, required by the recipe's source field). spec/ files name the outcome owner with email already redacted to redacted@example.com; .swamp.yaml repoId and the vault config are not secret. No real IPs, internal hostnames, account IDs or credentials found."
+    },
+    {
+      "id": "schema-strictness",
+      "verdict": "pass",
+      "note": "All schemas are plain z.object without passthrough; ItemSchema.strict() is asserted in a test against real check/clean items. Mechanical checks: every writeResource (result; cleanupWorktrees, cleanupBranchHeads, cleanupBranchDelete, cleanupRemoteBranchDelete; cleanupMergedPrs, cleanupPullRequest) writes exactly its schema's fields with real values; cleanup_merged_prs carries an honest truncated flag; headBranch and head are stripped from items."
+    },
+    {
+      "id": "lifetime-gc",
+      "verdict": "pass",
+      "note": "result: lifetime infinite, garbageCollection 20 (history of runs). All added git/github resources: ephemeral, garbageCollection 10."
+    },
+    {
+      "id": "crud-completeness",
+      "verdict": "na",
+      "note": "Not a CRUD lifecycle model: check/run are read-only reports and clean is a one-shot action over git/GitHub state; the added methods are single-purpose list/delete helpers. No create/update/sync lifecycle applies."
+    },
+    {
+      "id": "preflight-checks",
+      "verdict": "pass",
+      "note": "No swamp-level labelled checks are declared; the safety checks are deliberately inline and not skippable: inputs and a GitHub origin are validated before any call, and before each step clean re-reads the worktree (branch, head, lock, uncommitted changes) and the main checkout, and deletes origin's branch only under --force-with-lease on the PR head. Making these skippable would weaken the spec's no-orphan guarantee."
+    },
+    {
+      "id": "instance-names",
+      "verdict": "pass",
+      "note": "merged_cleanup writes spec result under distinct instances result (run), check and clean, same schema. Added methods write one instance per call (cleanup-worktrees, cleanup-branch-heads, cleanup-branch-<branch>, cleanup-remote-branch-<branch>, cleanup-merged-prs-<repo>, cleanup-pr-<repo>-<n>); no collision within one execution. Sanitising maps a/b and a-b to the same name across calls, which only versions over the earlier data."
+    },
+    {
+      "id": "data-access",
+      "verdict": "na",
+      "note": "No method reads back stored state; every read is live (git/gh via runModel results), as the re-check-before-each-step design requires. No dataRepository access."
+    },
+    {
+      "id": "version-upgrades",
+      "verdict": "na",
+      "note": "First release: model version and manifest version are both 2026.11.11.1; the only earlier manifest version (2026.10.26.1) was the template placeholder and nothing in the repo shows a published earlier model schema, so no upgrades entry is needed."
+    }
+  ]
+}
