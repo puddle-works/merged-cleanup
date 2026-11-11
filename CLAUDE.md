@@ -75,3 +75,76 @@ It holds one puddle: one extension with one bounded purpose.
 
 [adr]: https://github.com/puddle-works/puddleworks-apps/blob/main/docs/adr/ADR-004-one-repo-per-puddle.md
 [ui]: https://github.com/puddle-works/puddleworks-capture/blob/main/docs/adr/ADR-006-preact-on-the-server.md
+
+<!-- BEGIN puddleworks-factory app section -->
+# merged-cleanup
+
+Clean up after a merged PR. Built by puddleworks-factory from the app spec `merged-cleanup`;
+the specification below was agreed before it was handed over.
+
+Spec: [where it was agreed](http://127.0.0.1:3002/requests/2c4c963a-b14d-403f-9b1f-2bdabbc71c19), version 2, hash `9442f5b008d8f5d6f1939c6c27cbf3ea7a52585995f3a795ee526ab50e937ca9`.
+
+## Bounded purpose
+
+For merged PRs in the repository of the current directory, report whether each one's worktree and branches are safe to clean up (check), and clean up those that are (clean): remove the worktree, delete the local branch and origin's branch with a lease on the PR's head, and fast-forward main.
+
+## Inputs (the run form)
+
+- `pr` (integer, `0`) — A PR number to check or clean up; 0 means none named.
+- `prs` (string, empty) — Up to 5 more PR numbers, comma-separated, digits only; together with pr at most 5. With none named, the latest 3 merged PRs that still have a worktree at their head.
+
+## Settings (set once per model instance)
+
+None.
+
+## Output
+
+Per PR: its number, title, verdict (clean, primary, dirty, locked, ahead, absent, open, closed, error), worktree, branch and a one-line reason; for clean, each step (remove worktree, delete local branch, delete origin branch, fast-forward main) as done, already done, skipped with why, or failed with the error; then a one-line summary, or "Nothing to clean up" when there is none.
+
+## Out of scope
+
+- Merging, closing or approving PRs
+- Routing turns and the ask-once gate itself: those stay in puddlerouter and @puddleworks/recipes; this request only adds the recipe that uses the gate
+- Removing puddlerouter's own merged check (_lib/merged.ts) and its tests once the recipe is live (follow-up work in puddlerouter)
+- Removing worktrees that are dirty, locked, ahead of the PR's head, or not at the head of a merged PR
+- Any force: no git worktree remove --force, no git branch -D, no plain --force push
+- Repositories other than the one the current directory is in, and remotes other than origin
+- Linking, repointing or otherwise changing Orca worktree lineage
+
+Anything on this list, or anything beyond the purpose above, needs a new
+spec. Do not add it here, and do not add permissions or secrets the
+settings above do not name.
+
+## Finishing the draft
+
+1. Replace the `run` stub in `extensions/models/merged_cleanup.ts` with the
+   real behaviour. Keep the argument names: the workflow and the run form
+   depend on them.
+2. Give `ResultSchema.items` the shape of the output above, and add tests for
+   the behaviour to `extensions/models/merged_cleanup_test.ts`. Leave the
+   generated tests as they are: they stub `run`, so they keep passing. Tests
+   of the behaviour call `run` directly with working settings.
+3. If the tests need permissions (`--allow-read`, `--allow-net`, …), add the
+   same flags to the "Test it" command in `README.md` and to the test commands
+   in `.github/workflows/ci.yml`, and, if the repo has a `Makefile`, to its
+   `test` target.
+4. `deno check` and `deno test` must pass before review.
+
+A web UI is Preact rendered on the server, written with `h()` in `.ts`,
+because the swamp registry rejects `.tsx`. The Factory's viewer works this
+way.
+
+## Recipe
+
+These phrases were agreed for this app:
+
+- "22 is merged": After one yes: PR 22: worktree removed, local branch deleted, origin branch deleted, main fast-forwarded (each step shown as done, already done, skipped with why, or failed with the error), then a one-line summary.
+- "merged": After one yes: the same steps for each of the latest 3 merged PRs that still have a worktree at their head, then a one-line summary; or "Nothing to clean up" when there are none.
+
+No recipe was drafted, so they don't reach it yet. The phrase "merged" doesn't show where the piece "pr" goes.
+
+If the app can answer them with one method after all, write
+`workflows/workflow-merged-cleanup-recipe.yaml` by hand, list it in `manifest.yaml` and
+label the manifest `puddlerouter-recipe`. Readiness then checks it.
+
+<!-- END puddleworks-factory app section -->
