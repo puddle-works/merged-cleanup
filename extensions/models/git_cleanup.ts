@@ -4,7 +4,8 @@
  *
  * - `cleanup_worktree_list`: the repo's worktrees (path, HEAD, branch, flags).
  * - `cleanup_delete_branch`: `git branch -d` (never `-D`); a branch already
- *   gone is "already absent", a refusal throws with git's message.
+ *   gone is "already absent", a refusal (or a repo it can't read) throws with
+ *   git's message.
  * - `cleanup_delete_remote_branch`: deletes a branch on origin with
  *   `--force-with-lease` on the head it is expected at, so a branch that moved
  *   is never deleted; a branch already gone is "already absent".
@@ -179,9 +180,19 @@ export const extension = {
         const branch = BranchName.parse(args.branch);
         const repoPath = repoPathOf(ctx);
         const ref = `refs/heads/${branch}`;
-        const exists =
-          (await git(["rev-parse", "--verify", "--quiet", ref], repoPath))
-            .code === 0;
+        ctx.logger.info("Deleting branch {branch}", { branch });
+        // rev-parse --verify --quiet exits 1 for a missing ref; anything else
+        // (128 for a folder that is no repo) means the repo can't be read.
+        const probe = await git(
+          ["rev-parse", "--verify", "--quiet", ref],
+          repoPath,
+        );
+        if (probe.code > 1) {
+          throw new Error(
+            `could not read branch ${branch} (exit ${probe.code}): ${probe.stderr}`,
+          );
+        }
+        const exists = probe.code === 0;
         if (exists) {
           const res = await git(["branch", "-d", "--", branch], repoPath);
           if (res.code !== 0) {
@@ -228,6 +239,10 @@ export const extension = {
           .parse(args.expect);
         const repoPath = repoPathOf(ctx);
         const ref = `refs/heads/${branch}`;
+        ctx.logger.info("Deleting origin/{branch} at {expect}", {
+          branch,
+          expect,
+        });
         const listed = await git(["ls-remote", "--", "origin", ref], repoPath);
         if (listed.code !== 0) {
           throw new Error(`git ls-remote failed: ${listed.stderr}`);

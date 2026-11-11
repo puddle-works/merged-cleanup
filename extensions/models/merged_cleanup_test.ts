@@ -10,7 +10,6 @@ import { assertSpyCallArgs, stub } from "jsr:@std/testing@1.0.21/mock";
 import {
   behaviour,
   type GlobalArgs,
-  GlobalArgsSchema,
   model,
   ResultSchema,
   RunArgsSchema,

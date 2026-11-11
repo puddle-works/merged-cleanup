@@ -67,17 +67,25 @@ export interface Repos {
   main: string;
   /** A second clone, where "GitHub" merges PRs and others push. */
   other: string;
+  /** The default branch: main, or master for a repo made with `trunk: "master"`. */
+  trunk: string;
   /** Remove everything. */
   [Symbol.asyncDispose](): Promise<void>;
 }
 
-/** origin with one commit on main, the main clone, and another clone. */
-export async function repos(): Promise<Repos> {
+/**
+ * origin with one commit on its default branch (main unless `trunk` says
+ * master), the main clone, and another clone.
+ */
+export async function repos(
+  opts: { trunk?: "main" | "master" } = {},
+): Promise<Repos> {
+  const trunk = opts.trunk ?? "main";
   const root = await Deno.realPath(await Deno.makeTempDir());
   const origin = `${root}/origin.git`;
   const main = `${root}/repo`;
   const other = `${root}/other`;
-  await ok(root, "init", "-q", "--bare", "-b", "main", origin);
+  await ok(root, "init", "-q", "--bare", "-b", trunk, origin);
   for (const dir of [main, other]) {
     await ok(root, "clone", "-q", origin, dir);
     // The URL is GitHub's, as Capture's repos are; git reaches the bare repo.
@@ -87,14 +95,15 @@ export async function repos(): Promise<Repos> {
   await Deno.writeTextFile(`${main}/README.md`, "hello\n");
   await ok(main, "add", "README.md");
   await ok(main, "commit", "-q", "-m", "first");
-  await ok(main, "push", "-q", "-u", "origin", "main");
-  await ok(other, "pull", "-q", "origin", "main");
-  await ok(other, "branch", "-q", "--set-upstream-to=origin/main", "main");
+  await ok(main, "push", "-q", "-u", "origin", trunk);
+  await ok(other, "pull", "-q", "origin", trunk);
+  await ok(other, "branch", "-q", `--set-upstream-to=origin/${trunk}`, trunk);
   return {
     root,
     origin,
     main,
     other,
+    trunk,
     [Symbol.asyncDispose]: () => Deno.remove(root, { recursive: true }),
   };
 }
@@ -114,7 +123,7 @@ export async function worktreePr(
   opts: { upstream?: boolean } = {},
 ): Promise<{ path: string; head: string }> {
   const path = `${r.root}/wt-${name.replace(/\//g, "-")}`;
-  await ok(r.main, "worktree", "add", "-q", "-b", name, path, "main");
+  await ok(r.main, "worktree", "add", "-q", "-b", name, path, r.trunk);
   await Deno.writeTextFile(`${path}/${name.replace(/\//g, "-")}.txt`, name);
   await ok(path, "add", "-A");
   await ok(path, "commit", "-q", "-m", `work on ${name}`);
@@ -130,15 +139,23 @@ export async function mergeOnOrigin(
   how: "merge" | "squash" = "merge",
 ): Promise<void> {
   await ok(r.other, "fetch", "-q", "origin");
-  await ok(r.other, "checkout", "-q", "main");
-  await ok(r.other, "merge", "-q", "--ff-only", "origin/main");
+  await ok(r.other, "checkout", "-q", r.trunk);
+  await ok(r.other, "merge", "-q", "--ff-only", `origin/${r.trunk}`);
   if (how === "merge") {
-    await ok(r.other, "merge", "-q", "--no-ff", "-m", "merge", `origin/${branch}`);
+    await ok(
+      r.other,
+      "merge",
+      "-q",
+      "--no-ff",
+      "-m",
+      "merge",
+      `origin/${branch}`,
+    );
   } else {
     await ok(r.other, "merge", "-q", "--squash", `origin/${branch}`);
     await ok(r.other, "commit", "-q", "-m", `squash ${branch}`);
   }
-  await ok(r.other, "push", "-q", "origin", "main");
+  await ok(r.other, "push", "-q", "origin", r.trunk);
 }
 
 /** A new commit on origin's `branch`, pushed from the other clone. */
@@ -150,7 +167,7 @@ export async function pushToOrigin(r: Repos, branch: string): Promise<string> {
   await ok(r.other, "commit", "-q", "-m", "later");
   await ok(r.other, "push", "-q", "origin", branch);
   const sha = await ok(r.other, "rev-parse", "HEAD");
-  await ok(r.other, "checkout", "-q", "main");
+  await ok(r.other, "checkout", "-q", r.trunk);
   return sha;
 }
 
@@ -194,7 +211,10 @@ async function builtin(
       if (res.code !== 0) return failed(`git status failed: ${res.stderr}`);
       const lines = res.stdout.split("\n").filter((l) => l.trim());
       return okResult({
-        entries: lines.map((l) => ({ status: l.slice(0, 2), path: l.slice(3) })),
+        entries: lines.map((l) => ({
+          status: l.slice(0, 2),
+          path: l.slice(3),
+        })),
         clean: lines.length === 0,
       });
     }
@@ -210,7 +230,13 @@ async function builtin(
       return okResult({ isAncestor: res.code === 0 });
     }
     case "remote_ref": {
-      const res = await git(repoPath, "ls-remote", "--", "origin", String(a.ref));
+      const res = await git(
+        repoPath,
+        "ls-remote",
+        "--",
+        "origin",
+        String(a.ref),
+      );
       if (res.code !== 0) return failed(`git ls-remote failed: ${res.stderr}`);
       const line = res.stdout.split("\n").find((l) => l.trim());
       if (!line) {
@@ -244,6 +270,22 @@ async function builtin(
       return okResult({ path: a.path, removed: true, alreadyAbsent: false });
     }
     case "branch": {
+      if (a.list) {
+        // As @swamp/git parses `git branch --list`: only "* " is stripped.
+        const res = await git(repoPath, "branch", "--list");
+        if (res.code !== 0) {
+          return failed(`git branch --list failed: ${res.stderr}`);
+        }
+        let current: string | undefined;
+        const branches = res.stdout.split("\n").filter((l) => l.trim()).map(
+          (l) => {
+            const t = l.trim();
+            if (t.startsWith("* ")) return current = t.slice(2);
+            return t;
+          },
+        );
+        return okResult({ current, branches });
+      }
       const res = await git(repoPath, "checkout", "-q", String(a.name));
       if (res.code !== 0) return failed(`git checkout failed: ${res.stderr}`);
       return okResult({ current: a.name });
@@ -286,7 +328,9 @@ export function fakeSwamp(
       if (a.repo !== REPO) return failed(`no repo ${a.repo}`);
       if (call.method === "get_pull_request_context") {
         const pr = prs[Number(a.number)];
-        if (!pr) return failed(`Could not resolve to a PullRequest ${a.number}`);
+        if (!pr) {
+          return failed(`Could not resolve to a PullRequest ${a.number}`);
+        }
         return okResult({
           context: {
             title: pr.title,
@@ -316,7 +360,11 @@ export function fakeSwamp(
       await mine.execute(args as never, {
         globalArgs: { repoPath },
         logger: { info: () => {} },
-        writeResource: (_s: string, name: string, data: Record<string, unknown>) => {
+        writeResource: (
+          _s: string,
+          name: string,
+          data: Record<string, unknown>,
+        ) => {
           written.push(data);
           return Promise.resolve({ name });
         },

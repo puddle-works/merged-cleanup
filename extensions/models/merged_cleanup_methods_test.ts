@@ -4,7 +4,11 @@
  *
  * Run with: make test
  */
-import { assertEquals, assertMatch, assertRejects } from "jsr:@std/assert@1.0.19";
+import {
+  assertEquals,
+  assertMatch,
+  assertRejects,
+} from "jsr:@std/assert@1.0.19";
 import { model, ResultSchema, RunArgsSchema } from "./merged_cleanup.ts";
 import type { RunModel } from "./_lib/cleanup.ts";
 import {
@@ -16,16 +20,25 @@ import {
   worktreePr,
 } from "./_lib/fixture_test.ts";
 
-type Written = { specName: string; name: string; data: Record<string, unknown> };
+type Written = {
+  specName: string;
+  name: string;
+  data: Record<string, unknown>;
+};
 
 async function call(
   method: "run" | "check" | "clean",
   args: Record<string, unknown>,
   runModel?: RunModel,
+  logged: string[] = [],
 ): Promise<Written> {
   const writes: Written[] = [];
   const out = await model.methods[method].execute(RunArgsSchema.parse(args), {
     globalArgs: {},
+    logger: {
+      info: (msg: string, props?: Record<string, unknown>) =>
+        logged.push(msg.replace(/\{(\w+)\}/g, (_m, k) => String(props?.[k]))),
+    },
     ...(runModel ? { runModel } : {}),
     writeResource: (specName, name, data) => {
       writes.push({ specName, name, data });
@@ -81,6 +94,26 @@ Deno.test("clean cleans up and stores its steps as clean, with the summary", asy
     (await ok(r.main, "worktree", "list", "--porcelain")).includes(wt.path),
     false,
   );
+});
+
+Deno.test("clean logs what it was asked, a line per PR and its summary", async () => {
+  const { r, run } = await mergedPr();
+  await using _ = r;
+  const logged: string[] = [];
+  await call("clean", { pr: 22 }, run, logged);
+  assertEquals(logged[0], "clean: PRs 22");
+  assertMatch(logged[1], /^#22 \(Add the thing\)/);
+  assertEquals(logged.at(-1), "#22 cleaned up");
+});
+
+Deno.test("check with none named says so in its first log line", async () => {
+  await using r = await repos();
+  const logged: string[] = [];
+  await call("check", {}, fakeSwamp(r.main, {}), logged);
+  assertEquals(logged, [
+    "check: the latest 3 merged PRs",
+    "Nothing to clean up",
+  ]);
 });
 
 Deno.test("nothing to clean up: no items and the summary says so", async () => {

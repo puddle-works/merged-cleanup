@@ -11,7 +11,10 @@ import { parse } from "jsr:@std/yaml@1";
 
 const root = new URL("../../", import.meta.url);
 const read = async (path: string) =>
-  parse(await Deno.readTextFile(new URL(path, root))) as Record<string, unknown>;
+  parse(await Deno.readTextFile(new URL(path, root))) as Record<
+    string,
+    unknown
+  >;
 
 const REQUEST =
   "http://127.0.0.1:3002/requests/2c4c963a-b14d-403f-9b1f-2bdabbc71c19";
@@ -101,13 +104,15 @@ Deno.test("the numbered recipe: one clean step on merged-cleanup-model, pr from 
 
 Deno.test("the numbered recipe matches the spec's phrases and gives the PR number", async () => {
   const { whole } = await recipe("workflow-merged-cleanup-recipe.yaml");
-  for (const [text, n] of [
-    ["22 is merged", "22"],
-    ["pr 22 is merged", "22"],
-    ["#22 merged", "22"],
-    ["PR #22 has been merged.", "22"],
-    ["pr22 was merged!", "22"],
-  ]) {
+  for (
+    const [text, n] of [
+      ["22 is merged", "22"],
+      ["pr 22 is merged", "22"],
+      ["#22 merged", "22"],
+      ["PR #22 has been merged.", "22"],
+      ["pr22 was merged!", "22"],
+    ]
+  ) {
     assertEquals(whole.exec(text)?.[1], n, text);
   }
   for (const text of [...ANY_TURN, ...NOT_OURS, "merged"]) {

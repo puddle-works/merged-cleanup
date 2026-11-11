@@ -4,7 +4,12 @@
  *
  * Run with: make test
  */
-import { assert, assertEquals, assertRejects } from "jsr:@std/assert@1.0.19";
+import {
+  assert,
+  assertEquals,
+  assertMatch,
+  assertRejects,
+} from "jsr:@std/assert@1.0.19";
 import { extension, parseWorktreeList } from "./git_cleanup.ts";
 import {
   git,
@@ -27,12 +32,17 @@ async function call(
   method: string,
   repoPath: string,
   args: Record<string, unknown> = {},
+  logged: string[] = [],
 ): Promise<Record<string, unknown>> {
   const written: Record<string, unknown>[] = [];
   await methods[method].execute(args, {
     globalArgs: { repoPath },
-    logger: { info: () => {} },
-    writeResource: (_s: string, name: string, data: Record<string, unknown>) => {
+    logger: { info: (msg: string) => logged.push(msg) },
+    writeResource: (
+      _s: string,
+      name: string,
+      data: Record<string, unknown>,
+    ) => {
       written.push(data);
       return Promise.resolve({ name });
     },
@@ -100,15 +110,56 @@ Deno.test("cleanup_delete_branch deletes a merged branch with -d", async () => {
   const out = await call("cleanup_delete_branch", r.main, { branch: "me/x" });
   assertEquals(out.deleted, true);
   assertEquals(out.alreadyAbsent, false);
-  const left = await git(r.main, "rev-parse", "--verify", "--quiet", "refs/heads/me/x");
+  const left = await git(
+    r.main,
+    "rev-parse",
+    "--verify",
+    "--quiet",
+    "refs/heads/me/x",
+  );
   assertEquals(left.code, 1);
 });
 
 Deno.test("cleanup_delete_branch reports a branch already gone", async () => {
   await using r = await repos();
-  const out = await call("cleanup_delete_branch", r.main, { branch: "me/gone" });
+  const out = await call("cleanup_delete_branch", r.main, {
+    branch: "me/gone",
+  });
   assertEquals(out.deleted, false);
   assertEquals(out.alreadyAbsent, true);
+});
+
+Deno.test("cleanup_delete_branch: a folder that is not a git repo is an error, not already gone", async () => {
+  await using r = await repos();
+  const notRepo = `${r.root}/not-a-repo`;
+  await Deno.mkdir(notRepo);
+  await assertRejects(
+    () => call("cleanup_delete_branch", notRepo, { branch: "me/feature" }),
+    Error,
+    "could not read branch me/feature",
+  );
+});
+
+Deno.test("the delete methods log before they act and when they are done", async () => {
+  await using r = await repos();
+  const wt = await worktreePr(r, "me/feature");
+  await ok(r.main, "worktree", "remove", wt.path);
+  for (
+    const [method, args] of [
+      // Local first: -d accepts it while its upstream is still there.
+      ["cleanup_delete_branch", { branch: "me/feature" }],
+      ["cleanup_delete_remote_branch", {
+        branch: "me/feature",
+        expect: wt.head,
+      }],
+    ] as const
+  ) {
+    const logged: string[] = [];
+    await call(method, r.main, args, logged);
+    assertEquals(logged.length, 2, logged.join(" | "));
+    assertMatch(logged[0], /^Deleting /);
+    assertMatch(logged[1], /\{what\}$/);
+  }
 });
 
 Deno.test("cleanup_delete_branch refuses an unmerged branch with no upstream, and never forces", async () => {

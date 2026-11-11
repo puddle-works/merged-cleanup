@@ -30,6 +30,8 @@ import {
   clean as cleanPrs,
   type Item,
   ItemSchema,
+  LATEST,
+  prNumbers,
   type RunModel,
   summarise,
 } from "./_lib/cleanup.ts";
@@ -107,6 +109,10 @@ interface MethodContext {
   globalArgs: GlobalArgs;
   /** Runs another model's method in process; swamp gives it. */
   runModel?: RunModel;
+  /** swamp's logger; `{name}` placeholders are filled from `props`. */
+  logger?: {
+    info: (msg: string, props?: Record<string, unknown>) => void;
+  };
   writeResource: (
     specName: string,
     name: string,
@@ -115,6 +121,19 @@ interface MethodContext {
 }
 
 /** A method that runs `behaviour[name]` and writes its items as `instance`. */
+/** The PRs a run was asked about, for its first log line. */
+function asked(args: RunArgs): string {
+  let numbers: number[];
+  try {
+    numbers = prNumbers(args.pr, args.prs);
+  } catch {
+    return `pr ${args.pr}, prs "${args.prs}"`;
+  }
+  return numbers.length
+    ? `PRs ${numbers.join(", ")}`
+    : `the latest ${LATEST} merged PRs`;
+}
+
 function method(
   name: "run" | "check" | "clean",
   instance: string,
@@ -125,6 +144,8 @@ function method(
     description,
     arguments: RunArgsSchema,
     execute: async (args: RunArgs, context: MethodContext) => {
+      const log = context.logger;
+      log?.info("{method}: {what}", { method: name, what: asked(args) });
       // runModel is passed only when there is one, so a stub sees (args, settings).
       const items = context.runModel
         ? await behaviour[name](args, context.globalArgs, context.runModel)
@@ -135,6 +156,8 @@ function method(
         summary: summarise(items, mode),
         ranAt: new Date().toISOString(),
       };
+      for (const i of items) log?.info("{line}", { line: i.line });
+      log?.info("{summary}", { summary: result.summary });
       const handle = await context.writeResource("result", instance, result);
       return { dataHandles: [handle] };
     },

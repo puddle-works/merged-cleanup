@@ -47,7 +47,8 @@ const GITHUB = { modelType: "@webframp/github", name: "github" };
 /** Most PRs one run may name. */
 const MAX_NUMBERS = 5;
 /** Merged PRs looked at when none are named, newest first. */
-const LATEST = 3;
+/** How many merged PRs "none named" looks at. */
+export const LATEST = 3;
 /** Worktrees checked for commits after a PR's head. */
 const MAX_ANCESTRY = 10;
 
@@ -178,6 +179,10 @@ function githubRepo(url: string): string | null {
   return m ? `${m[1]}/${m[2]}` : null;
 }
 
+/** git's words for a commit or ref the repo doesn't have. */
+const UNKNOWN_COMMIT =
+  /not a valid commit name|not a valid object name|bad object|unknown revision/i;
+
 const isMain = (branch: string) => branch === "main" || branch === "master";
 
 function oneLine(text: string, max = 60): string {
@@ -284,7 +289,11 @@ export async function inspect(
       method: "is_ancestor",
       arguments: { ...at, ancestor, descendant },
     });
-    return res.ok && res.resources[0]?.attributes?.isAncestor === true;
+    if (res.ok) return res.resources[0]?.attributes?.isAncestor === true;
+    // A commit this repo doesn't have is in none of its branches; any other
+    // failure is the PR's error, not a quiet "no".
+    if (UNKNOWN_COMMIT.test(res.error.message)) return false;
+    throw new Error(oneLine(res.error.message, 160));
   };
   const branched = worktrees.filter((w) =>
     w.head && !w.bare && !w.detached && !isMain(w.branch)
@@ -689,11 +698,33 @@ export async function act(
     } catch (e) {
       return skipAll(PRIMARY_STEPS, `could not check again: ${message(e)}`);
     }
-    const res = await run({
+    // main, or master where the repo has no main (the spec's assumption).
+    const listed = await run({
       ...GIT,
       method: "branch",
-      arguments: { ...at, name: "main" },
+      arguments: { ...at, list: true },
     });
+    const names =
+      listed.ok && Array.isArray(listed.resources[0]?.attributes?.branches)
+        ? (listed.resources[0].attributes.branches as unknown[]).map((b) =>
+          str(b).replace(/^[*+] /, "")
+        )
+        : [];
+    const trunk = ["main", "master"].find((b) => names.includes(b));
+    const res = trunk
+      ? await run({
+        ...GIT,
+        method: "branch",
+        arguments: { ...at, name: trunk },
+      })
+      : {
+        ok: false as const,
+        error: {
+          message: listed.ok
+            ? "the repo has no main or master branch"
+            : listed.error.message,
+        },
+      };
     if (!res.ok) {
       return [
         { step, status: "failed", detail: oneLine(res.error.message, 160) },
@@ -703,7 +734,11 @@ export async function act(
         ),
       ];
     }
-    const switched: Step = { step, status: "done", detail: `${main} on main` };
+    const switched: Step = {
+      step,
+      status: "done",
+      detail: `${main} on ${trunk}`,
+    };
     const pulled = await fastForward();
     return [switched, pulled, await deleteLocal(f), await deleteOrigin(f)];
   };
