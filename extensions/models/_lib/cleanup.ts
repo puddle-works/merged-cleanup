@@ -19,6 +19,7 @@
  * @module
  */
 import { z } from "npm:zod@4";
+import { latestMerged } from "../github_cleanup.ts";
 
 /** One call to another model's method; `runModel` in a method context. */
 export interface ModelCall {
@@ -441,16 +442,9 @@ export async function inspect(
       }
     }
   } else {
-    const list = await attrs(run, GITHUB, "list_prs", {
-      repo,
-      state: "merged",
-    });
-    const rows = Array.isArray(list.pullRequests)
-      ? (list.pullRequests as { number: number; updatedAt?: string }[])
-      : [];
-    // list_prs gives no mergedAt, so "latest" is the most recently updated.
-    checked = rows
-      .toSorted((a, b) => str(b.updatedAt).localeCompare(str(a.updatedAt)))
+    // Our own method: list_prs gives no merge time.
+    const list = await attrs(run, GITHUB, "cleanup_merged_prs", { repo });
+    checked = latestMerged(list.pullRequests)
       .slice(0, LATEST)
       .map((r) => r.number);
     const bases = await lookUpAll(checked);

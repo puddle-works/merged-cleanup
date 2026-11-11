@@ -10,6 +10,7 @@
  * @module
  */
 import { extension } from "../git_cleanup.ts";
+import { listMergedPrs } from "../github_cleanup.ts";
 import type { ModelCall, RunModel, RunResult } from "./cleanup.ts";
 
 /** One answer `@webframp/github` gives for a PR. */
@@ -17,6 +18,9 @@ export interface FakePr {
   title: string;
   state: "MERGED" | "OPEN" | "CLOSED";
   headRefOid: string;
+  /** When it was merged; only a merged PR has one. */
+  mergedAt?: string;
+  /** Its last activity: the merge, or a comment after it. */
   updatedAt?: string;
 }
 
@@ -340,11 +344,19 @@ export function fakeSwamp(
           },
         });
       }
-      if (call.method === "list_prs" && a.state === "merged") {
+      if (call.method === "cleanup_merged_prs") {
+        // gh's answer, latest activity first, through the real method's code.
+        const rows = Object.entries(prs)
+          .filter(([, p]) => p.state === "MERGED")
+          .toSorted(([, p], [, q]) =>
+            String(q.updatedAt).localeCompare(String(p.updatedAt))
+          )
+          .map(([n, p]) => ({ number: Number(n), mergedAt: p.mergedAt }));
         return okResult({
-          pullRequests: Object.entries(prs)
-            .filter(([, p]) => p.state === "MERGED")
-            .map(([n, p]) => ({ number: Number(n), updatedAt: p.updatedAt })),
+          pullRequests: await listMergedPrs(
+            String(a.repo),
+            () => Promise.resolve(rows),
+          ),
         });
       }
       return failed(`the fake has no @webframp/github ${call.method}`);

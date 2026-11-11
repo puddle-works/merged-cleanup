@@ -35,11 +35,12 @@ import {
   worktreePr,
 } from "./fixture_test.ts";
 
-const merged = (head: string, updatedAt = "2026-11-10T10:00:00Z"): FakePr => ({
+const merged = (head: string, mergedAt = "2026-11-10T10:00:00Z"): FakePr => ({
   title: "Add the thing",
   state: "MERGED",
   headRefOid: head,
-  updatedAt,
+  mergedAt,
+  updatedAt: mergedAt,
 });
 
 async function branchExists(dir: string, branch: string): Promise<boolean> {
@@ -656,13 +657,34 @@ Deno.test("AC9: none named: only the latest 3 merged PRs, then only those with a
     "clean",
   ]]);
   assertEquals(await snapshot(r), before);
-  assert(calls.some((c) => c.method === "list_prs"));
+  assert(calls.some((c) => c.method === "cleanup_merged_prs"));
   const cleaned = await clean({ pr: 0, prs: "" }, fakeSwamp(r.main, prs));
   assertEquals(cleaned.map((i) => i.number), [3, 4]);
   assertEquals(await worktreeExists(r, a.path), true);
   assertEquals(await worktreeExists(r, c.path), false);
   assertEquals(await worktreeExists(r, d.path), false);
   assertEquals(summarise(cleaned, "clean"), "#3 cleaned up, #4 cleaned up");
+});
+
+Deno.test("AC9: the latest by merge time: a comment on an old merged PR doesn't push out one just merged", async () => {
+  await using r = await repos();
+  const a = await worktreePr(r, "me/a");
+  const b = await worktreePr(r, "me/b");
+  const c = await worktreePr(r, "me/c");
+  const d = await worktreePr(r, "me/d");
+  for (const br of ["me/a", "me/b", "me/c", "me/d"]) await mergeOnOrigin(r, br);
+  const prs = {
+    // Merged long ago, but commented on after the others were merged.
+    1: {
+      ...merged(a.head, "2026-10-01T00:00:00Z"),
+      updatedAt: "2026-11-09T00:00:00Z",
+    },
+    2: merged(b.head, "2026-11-04T00:00:00Z"),
+    3: merged(c.head, "2026-11-03T00:00:00Z"),
+    4: merged(d.head, "2026-11-02T00:00:00Z"),
+  };
+  const checked = await check({ pr: 0, prs: "" }, fakeSwamp(r.main, prs));
+  assertEquals(checked.map((i) => i.number), [2, 3, 4]);
 });
 
 Deno.test("AC9: none named and nothing to do: no items, 'Nothing to clean up'", async () => {

@@ -50,9 +50,13 @@ swamp model create @webframp/github github
   `primary` PR (its branch is checked out in the main checkout) it switches
   that checkout to `main`, or `master` where the repo has no `main`.
 
-With no PR named, "the latest 3 merged PRs" are the first 3 of
-`list_prs --state merged` sorted by `updatedAt`, newest first: `list_prs`
-gives no merge time.
+With no PR named, "the latest 3 merged PRs" are the 3 merged most recently.
+`list_prs` gives no merge time, so this extension adds `cleanup_merged_prs` to
+`@webframp/github`: it asks `gh` for the 30 merged PRs with the latest
+activity (a merge is activity) and sorts them by merge time. A PR is missed
+only when more than 30 merged PRs had activity after it was merged. It also
+adds four `cleanup_` methods to `@swamp/git` (worktree list, branch heads,
+local and origin branch delete), in `extensions/models/git_cleanup.ts`.
 
 A named PR whose worktree is already gone (Orca removed it) but whose branch is
 left, here or on origin, at the PR's head is `clean`: clean reports the
@@ -64,11 +68,12 @@ a worktree at their head are looked at, as the spec says.
 
 ### How it was checked
 
-- 69 tests on real temporary git repos, with origin a local bare repo. The
-  `@swamp/git` and `@webframp/github` methods it calls are fakes in
+- 75 tests, most on real temporary git repos, with origin a local bare repo.
+  The `@swamp/git` and `@webframp/github` built-ins it calls are fakes in
   `extensions/models/_lib/fixture_test.ts` that run the same git commands and
   return the same fields as those extensions' code (`@swamp/git`
-  2026.10.23.1, `@webframp/github` 2026.11.06.1).
+  2026.10.23.1, `@webframp/github` 2026.11.06.1). Its own methods run for
+  real, except that `cleanup_merged_prs` is given gh's answer.
 - One real run against a throwaway private GitHub repo, with those extensions
   installed, on 2026-11-11, deleted afterwards. Three merged PRs: #1 with its
   worktree at its head (merge commit), #2 squash-merged with its worktree and
@@ -80,6 +85,9 @@ a worktree at their head are looked at, as the spec says.
   one branch (main, at origin's head) on each side. `clean` again said all
   three absent and changed nothing, and the latest recipe's workflow said
   "Nothing to clean up".
+- `cleanup_merged_prs` against real GitHub on 2026-11-11 (a repo with 10
+  merged PRs) gave them newest merge first, the same order as
+  `gh pr list --state merged --json number,mergedAt` sorted by `mergedAt`.
 - That a `repoPath` in `context.runModel` arguments overrides the instance's
   own, as the fakes assume, was checked with a probe model against real swamp.
 

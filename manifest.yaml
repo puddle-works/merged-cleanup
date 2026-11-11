@@ -14,6 +14,7 @@ additionalFiles:
 models:
   - merged_cleanup.ts
   - git_cleanup.ts
+  - github_cleanup.ts
 workflows:
   - workflow-merged-cleanup.yaml
   - workflow-merged-cleanup-recipe.yaml

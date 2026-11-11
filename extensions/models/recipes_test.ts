@@ -174,7 +174,11 @@ Deno.test("the manifest says it writes, offers its recipes and lists what it cal
   assert(labels.includes("effects-write"));
   assert(!labels.includes("effects-read"));
   assert(labels.includes("puddlerouter-recipe"));
-  assertEquals(m.models, ["merged_cleanup.ts", "git_cleanup.ts"]);
+  assertEquals(m.models, [
+    "merged_cleanup.ts",
+    "git_cleanup.ts",
+    "github_cleanup.ts",
+  ]);
   assertEquals(m.workflows, [
     "workflow-merged-cleanup.yaml",
     "workflow-merged-cleanup-recipe.yaml",

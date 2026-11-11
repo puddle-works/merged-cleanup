@@ -1,5 +1,5 @@
 /**
- * Tests for the three methods this extension adds to `@swamp/git`, on real
+ * Tests for the four methods this extension adds to `@swamp/git`, on real
  * git repos.
  *
  * Run with: make test
