@@ -54,7 +54,8 @@ With no PR named, "the latest 3 merged PRs" are the 3 merged most recently.
 `list_prs` gives no merge time, so this extension adds `cleanup_merged_prs` to
 `@webframp/github`: it asks `gh` for the 30 merged PRs with the latest
 activity (a merge is activity) and sorts them by merge time. A PR is missed
-only when more than 30 merged PRs had activity after it was merged. It also
+only when more than 30 merged PRs had activity after it was merged; its
+resource says `truncated: true` when gh gave all 30. It also
 adds four `cleanup_` methods to `@swamp/git` (worktree list, branch heads,
 local and origin branch delete), in `extensions/models/git_cleanup.ts`.
 
@@ -68,7 +69,7 @@ a worktree at their head are looked at, as the spec says.
 
 ### How it was checked
 
-- 75 tests, most on real temporary git repos, with origin a local bare repo.
+- 79 tests, most on real temporary git repos, with origin a local bare repo.
   The `@swamp/git` and `@webframp/github` built-ins it calls are fakes in
   `extensions/models/_lib/fixture_test.ts` that run the same git commands and
   return the same fields as those extensions' code (`@swamp/git`

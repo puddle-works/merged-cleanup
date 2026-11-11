@@ -185,6 +185,7 @@ export const extension = {
       arguments: z.object({}),
       execute: async (_args: Record<string, never>, ctx: Context) => {
         const repoPath = repoPathOf(ctx);
+        ctx.logger.info("Listing worktrees in {repoPath}", { repoPath });
         const res = await git(["worktree", "list", "--porcelain"], repoPath);
         if (res.code !== 0) {
           throw new Error(
@@ -207,6 +208,9 @@ export const extension = {
       arguments: z.object({}),
       execute: async (_args: Record<string, never>, ctx: Context) => {
         const repoPath = repoPathOf(ctx);
+        ctx.logger.info("Listing branches in {repoPath} and on origin", {
+          repoPath,
+        });
         const local = await git(
           ["for-each-ref", "--format=%(refname)%09%(objectname)", "refs/heads"],
           repoPath,

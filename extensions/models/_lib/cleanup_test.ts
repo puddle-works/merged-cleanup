@@ -250,6 +250,13 @@ Deno.test("AC3: clean on a PR GitHub can't find changes nothing and says why", a
   await cleanChangesNothing(r, {}, "error", /could not be checked/);
 });
 
+Deno.test("a PR GitHub gives no state for is an error, not closed", async () => {
+  await using r = await repos();
+  const wt = await worktreePr(r, "me/feature");
+  const noState = { title: "t", headRefOid: wt.head } as unknown as FakePr;
+  await cleanChangesNothing(r, { 22: noState }, "error", /no state/);
+});
+
 // ---- AC4 --------------------------------------------------------------------
 
 Deno.test("AC4: a commit in the worktree after check: not removed, the PR's steps skipped with why", async () => {

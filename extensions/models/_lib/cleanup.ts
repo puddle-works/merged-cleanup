@@ -366,11 +366,17 @@ export async function inspect(
       number: n,
       maxComments: 1,
     })).context as Record<string, unknown> | undefined;
+    const state = str(c?.state).toUpperCase();
+    // A PR with no state (or one GitHub has not told us of) is an error, never
+    // taken for closed.
+    if (!["MERGED", "OPEN", "CLOSED"].includes(state)) {
+      throw new Error(`GitHub gave PR #${n} no state`);
+    }
     return {
       number: n,
       title: oneLine(str(c?.title)),
       url: str(c?.url),
-      state: str(c?.state).toUpperCase(),
+      state,
       head: str(c?.headRefOid),
     };
   };

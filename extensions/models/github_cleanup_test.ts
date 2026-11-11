@@ -5,12 +5,17 @@
  *
  * Run with: make test
  */
-import { assertEquals, assertRejects } from "jsr:@std/assert@1.0.19";
+import {
+  assertEquals,
+  assertRejects,
+  assertThrows,
+} from "jsr:@std/assert@1.0.19";
 import {
   extension,
   latestMerged,
   listMergedPrs,
   MERGED_PRS_LOOKED_AT,
+  parseGhJson,
 } from "./github_cleanup.ts";
 
 const methods = Object.assign({}, ...extension.methods) as Record<
@@ -64,7 +69,27 @@ Deno.test("listMergedPrs: asks gh for merged PRs by latest activity, then sorts 
     "--limit",
     String(MERGED_PRS_LOOKED_AT),
   ]]);
-  assertEquals(rows.map((r) => r.number), [8, 9]);
+  assertEquals(rows.pullRequests.map((r) => r.number), [8, 9]);
+  assertEquals(rows.truncated, false);
+});
+
+Deno.test("listMergedPrs: truncated when gh gave as many as it was asked for", async () => {
+  const full = Array.from({ length: MERGED_PRS_LOOKED_AT }, (_, i) => ({
+    number: i + 1,
+    mergedAt: `2026-11-${String(1 + (i % 28)).padStart(2, "0")}T00:00:00Z`,
+  }));
+  const out = await listMergedPrs("acme/widgets", () => Promise.resolve(full));
+  assertEquals(out.truncated, true);
+  assertEquals(out.pullRequests.length, MERGED_PRS_LOOKED_AT);
+});
+
+Deno.test("parseGhJson: output that isn't JSON says which command gave it", () => {
+  assertEquals(parseGhJson('[{"number":1}]'), [{ number: 1 }]);
+  assertThrows(
+    () => parseGhJson("<html>rate limited</html>"),
+    Error,
+    "gh pr list gave output that isn't JSON: <html>rate limited</html>",
+  );
 });
 
 Deno.test("listMergedPrs: refuses a repo that isn't owner/name", async () => {

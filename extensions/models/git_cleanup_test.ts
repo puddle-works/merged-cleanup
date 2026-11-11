@@ -170,6 +170,18 @@ Deno.test("cleanup_delete_branch: a folder that is not a git repo is an error, n
   );
 });
 
+Deno.test("the listing methods log when they start and when they are done", async () => {
+  await using r = await repos();
+  await pushToOrigin(r, "main");
+  for (const method of ["cleanup_worktree_list", "cleanup_branch_heads"]) {
+    const logged: string[] = [];
+    await call(method, r.main, {}, logged);
+    assertEquals(logged.length, 2, logged.join(" | "));
+    assertMatch(logged[0], /^Listing /);
+    assertMatch(logged[1], /^Found /);
+  }
+});
+
 Deno.test("the delete methods log before they act and when they are done", async () => {
   await using r = await repos();
   const wt = await worktreePr(r, "me/feature");

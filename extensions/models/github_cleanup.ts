@@ -37,6 +37,11 @@ const MergedPrsSchema = z.object({
   repo: z.string(),
   /** Newest merge first. */
   pullRequests: z.array(MergedPrSchema),
+  /**
+   * True when gh gave as many PRs as it was asked for, so older merges may
+   * have been left out.
+   */
+  truncated: z.boolean(),
   listedAt: z.iso.datetime(),
 });
 
@@ -57,29 +62,43 @@ export function latestMerged(rows: unknown): MergedPr[] {
 /** Runs gh with these arguments and gives its parsed JSON output. */
 export type GhRun = (args: string[]) => Promise<unknown>;
 
-/** The repo's merged PRs, newest merge first. */
+/**
+ * The repo's merged PRs, newest merge first, and whether gh gave as many as
+ * it was asked for (so older merges may be missing).
+ */
 export async function listMergedPrs(
   repo: string,
   gh: GhRun,
-): Promise<MergedPr[]> {
+): Promise<{ pullRequests: MergedPr[]; truncated: boolean }> {
   const r = Repo.safeParse(repo);
   if (!r.success) throw new Error(`repo must be owner/name, not "${repo}"`);
-  return latestMerged(
-    await gh([
-      "pr",
-      "list",
-      "--repo",
-      r.data,
-      "--state",
-      "merged",
-      "--search",
-      "sort:updated-desc",
-      "--json",
-      "number,mergedAt",
-      "--limit",
-      String(MERGED_PRS_LOOKED_AT),
-    ]),
-  );
+  const rows = await gh([
+    "pr",
+    "list",
+    "--repo",
+    r.data,
+    "--state",
+    "merged",
+    "--search",
+    "sort:updated-desc",
+    "--json",
+    "number,mergedAt",
+    "--limit",
+    String(MERGED_PRS_LOOKED_AT),
+  ]);
+  return {
+    pullRequests: latestMerged(rows),
+    truncated: Array.isArray(rows) && rows.length >= MERGED_PRS_LOOKED_AT,
+  };
+}
+
+/** gh's stdout as JSON, or an error that says which command gave it. */
+export function parseGhJson(stdout: string): unknown {
+  try {
+    return JSON.parse(stdout);
+  } catch {
+    throw new Error(`gh pr list gave output that isn't JSON: ${stdout.trim()}`);
+  }
 }
 
 async function realGh(args: string[]): Promise<unknown> {
@@ -96,7 +115,7 @@ async function realGh(args: string[]): Promise<unknown> {
       `gh pr list failed (exit ${out.code}): ${dec.decode(out.stderr).trim()}`,
     );
   }
-  return JSON.parse(dec.decode(out.stdout));
+  return parseGhJson(dec.decode(out.stdout));
 }
 
 interface Context {
@@ -125,7 +144,11 @@ export const extension = {
         "List a repo's merged PRs, newest merge first, with when each was merged (read-only: gh pr list --state merged).",
       arguments: z.object({ repo: Repo }),
       execute: async (args: { repo: string }, ctx: Context) => {
-        const pullRequests = await listMergedPrs(args.repo, realGh);
+        ctx.logger.info("Listing merged PRs in {repo}", { repo: args.repo });
+        const { pullRequests, truncated } = await listMergedPrs(
+          args.repo,
+          realGh,
+        );
         ctx.logger.info("Found {count} merged PRs in {repo}", {
           count: pullRequests.length,
           repo: args.repo,
@@ -136,6 +159,7 @@ export const extension = {
           {
             repo: args.repo,
             pullRequests,
+            truncated,
             listedAt: new Date().toISOString(),
           },
         );

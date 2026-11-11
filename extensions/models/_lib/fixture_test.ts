@@ -353,10 +353,10 @@ export function fakeSwamp(
           )
           .map(([n, p]) => ({ number: Number(n), mergedAt: p.mergedAt }));
         return okResult({
-          pullRequests: await listMergedPrs(
+          pullRequests: (await listMergedPrs(
             String(a.repo),
             () => Promise.resolve(rows),
-          ),
+          )).pullRequests,
         });
       }
       return failed(`the fake has no @webframp/github ${call.method}`);
