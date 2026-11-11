@@ -134,7 +134,8 @@ export const extension = {
       garbageCollection: 10,
     },
     cleanupBranchDelete: {
-      description: "A local branch deleted with git branch -d, or already gone.",
+      description:
+        "A local branch deleted with git branch -d, or already gone.",
       schema: BranchDeleteSchema,
       lifetime: "ephemeral" as const,
       garbageCollection: 10,
@@ -210,11 +211,20 @@ export const extension = {
         "Delete a branch on origin only while it is at the expected commit (git push --force-with-lease=<branch>:<expect> --delete). Already gone is reported; a branch that moved is an error.",
       arguments: z.object({
         branch: BranchName,
-        expect: z.string().regex(/^[0-9a-f]{40}$/, "expect is a full commit id"),
+        expect: z.string().regex(
+          /^[0-9a-f]{40}$/,
+          "expect is a full commit id",
+        ),
       }),
-      execute: async (args: { branch: string; expect: string }, ctx: Context) => {
+      execute: async (
+        args: { branch: string; expect: string },
+        ctx: Context,
+      ) => {
         const branch = BranchName.parse(args.branch);
-        const expect = z.string().regex(/^[0-9a-f]{40}$/, "expect is a full commit id")
+        const expect = z.string().regex(
+          /^[0-9a-f]{40}$/,
+          "expect is a full commit id",
+        )
           .parse(args.expect);
         const repoPath = repoPathOf(ctx);
         const ref = `refs/heads/${branch}`;
@@ -225,11 +235,19 @@ export const extension = {
         const exists = listed.stdout !== "";
         if (exists) {
           const res = await git(
-            ["push", `--force-with-lease=${ref}:${expect}`, "origin", "--delete", ref],
+            [
+              "push",
+              `--force-with-lease=${ref}:${expect}`,
+              "origin",
+              "--delete",
+              ref,
+            ],
             repoPath,
           );
           if (res.code !== 0) {
-            throw new Error(res.stderr || `git push --delete exited ${res.code}`);
+            throw new Error(
+              res.stderr || `git push --delete exited ${res.code}`,
+            );
           }
         }
         ctx.logger.info("origin/{branch}: {what}", {

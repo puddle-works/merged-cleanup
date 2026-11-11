@@ -35,9 +35,7 @@ import {
 } from "./_lib/cleanup.ts";
 
 /** Settings fixed once per model instance by the builder, not the person running it. */
-export const GlobalArgsSchema = z.object({
-
-});
+export const GlobalArgsSchema = z.object({});
 /** The settings, as the run method receives them. */
 export type GlobalArgs = z.infer<typeof GlobalArgsSchema>;
 

@@ -70,7 +70,9 @@ export function prNumbers(pr: number, prs: string): number[] {
   }
   const numbers = [...new Set(out)];
   if (numbers.length > MAX_NUMBERS) {
-    throw new Error(`at most ${MAX_NUMBERS} PRs at once, not ${numbers.length}`);
+    throw new Error(
+      `at most ${MAX_NUMBERS} PRs at once, not ${numbers.length}`,
+    );
   }
   return numbers;
 }
@@ -273,7 +275,9 @@ export async function inspect(
   const main = worktrees.find((w) => w.primary);
   const mainCheckout = main?.path ?? "";
   const at = mainCheckout ? { repoPath: mainCheckout } : {};
-  const mainRef = `origin/${isMain(main?.branch ?? "") ? main!.branch : "main"}`;
+  const mainRef = `origin/${
+    isMain(main?.branch ?? "") ? main!.branch : "main"
+  }`;
   const isAncestor = async (ancestor: string, descendant: string) => {
     const res = await run({
       ...GIT,
@@ -464,7 +468,9 @@ export function summarise(items: Item[], mode: "check" | "clean"): string {
       s.status === "done" || s.status === "already done"
     ).length;
     if (ok === i.steps.length) return `#${i.number} cleaned up`;
-    return ok ? `#${i.number} partly cleaned up` : `#${i.number} not cleaned up`;
+    return ok
+      ? `#${i.number} partly cleaned up`
+      : `#${i.number} not cleaned up`;
   }).join(", ");
 }
 
@@ -498,46 +504,50 @@ export async function act(
   const short = (sha: string) => sha.slice(0, 7);
 
   let ff: Promise<Step> | undefined;
-  const fastForward = () => ff ??= (async (): Promise<Step> => {
-    const step = "fast-forward main" as const;
-    try {
-      const primary = (await worktreesOf(run, main)).find((w) => w.primary);
-      const branch = primary?.branch ?? "";
-      if (!isMain(branch)) {
-        return {
-          step,
-          status: "skipped",
-          detail: `the main checkout is on ${branch || "no branch"}, not main`,
-        };
+  const fastForward = () =>
+    ff ??= (async (): Promise<Step> => {
+      const step = "fast-forward main" as const;
+      try {
+        const primary = (await worktreesOf(run, main)).find((w) => w.primary);
+        const branch = primary?.branch ?? "";
+        if (!isMain(branch)) {
+          return {
+            step,
+            status: "skipped",
+            detail: `the main checkout is on ${
+              branch || "no branch"
+            }, not main`,
+          };
+        }
+        if (!(await isClean(run, main))) {
+          return {
+            step,
+            status: "skipped",
+            detail:
+              "the main checkout has uncommitted changes, so it was left " +
+              "untouched",
+          };
+        }
+        const res = await run({
+          ...GIT,
+          method: "pull",
+          arguments: { ...at, remote: "origin", branch, ffOnly: true },
+        });
+        if (!res.ok) {
+          return {
+            step,
+            status: "skipped",
+            detail: `${branch} can't fast-forward to origin/${branch}, so it ` +
+              `was left as it is: ${oneLine(res.error.message, 120)}`,
+          };
+        }
+        return res.resources[0]?.attributes?.alreadyUpToDate === true
+          ? { step, status: "already done", detail: `${branch} was up to date` }
+          : { step, status: "done", detail: `${branch} fast-forwarded` };
+      } catch (e) {
+        return { step, status: "failed", detail: message(e) };
       }
-      if (!(await isClean(run, main))) {
-        return {
-          step,
-          status: "skipped",
-          detail: "the main checkout has uncommitted changes, so it was left " +
-            "untouched",
-        };
-      }
-      const res = await run({
-        ...GIT,
-        method: "pull",
-        arguments: { ...at, remote: "origin", branch, ffOnly: true },
-      });
-      if (!res.ok) {
-        return {
-          step,
-          status: "skipped",
-          detail: `${branch} can't fast-forward to origin/${branch}, so it ` +
-            `was left as it is: ${oneLine(res.error.message, 120)}`,
-        };
-      }
-      return res.resources[0]?.attributes?.alreadyUpToDate === true
-        ? { step, status: "already done", detail: `${branch} was up to date` }
-        : { step, status: "done", detail: `${branch} fast-forwarded` };
-    } catch (e) {
-      return { step, status: "failed", detail: message(e) };
-    }
-  })();
+    })();
 
   const deleteLocal = async (f: Finding): Promise<Step> => {
     const step = "delete local branch" as const;
@@ -547,11 +557,23 @@ export async function act(
       arguments: { ...at, branch: f.branch },
     });
     if (!res.ok) {
-      return { step, status: "failed", detail: oneLine(res.error.message, 160) };
+      return {
+        step,
+        status: "failed",
+        detail: oneLine(res.error.message, 160),
+      };
     }
     return res.resources[0]?.attributes?.alreadyAbsent === true
-      ? { step, status: "already done", detail: `${f.branch} was already deleted` }
-      : { step, status: "done", detail: `${f.branch} deleted with git branch -d` };
+      ? {
+        step,
+        status: "already done",
+        detail: `${f.branch} was already deleted`,
+      }
+      : {
+        step,
+        status: "done",
+        detail: `${f.branch} deleted with git branch -d`,
+      };
   };
 
   // One ls-remote and one push: cleanup_delete_remote_branch finds a branch
@@ -592,7 +614,9 @@ export async function act(
     w: Worktree,
     place: string,
   ): Promise<string> => {
-    if (w.branch !== f.branch) return `${place} is now on ${w.branch || "no branch"}`;
+    if (w.branch !== f.branch) {
+      return `${place} is now on ${w.branch || "no branch"}`;
+    }
     if (w.head !== f.head) {
       return `${place} is no longer at #${f.number}'s head (a new commit ` +
         "since the check), so it was left as is";
@@ -622,7 +646,11 @@ export async function act(
     }
     let removed: Step;
     if (!w) {
-      removed = { step, status: "already done", detail: "it was already removed" };
+      removed = {
+        step,
+        status: "already done",
+        detail: "it was already removed",
+      };
     } else {
       const res = await run({
         ...GIT,
@@ -669,7 +697,10 @@ export async function act(
     if (!res.ok) {
       return [
         { step, status: "failed", detail: oneLine(res.error.message, 160) },
-        ...skipAll(PRIMARY_STEPS.slice(1), "the main checkout was not switched"),
+        ...skipAll(
+          PRIMARY_STEPS.slice(1),
+          "the main checkout was not switched",
+        ),
       ];
     }
     const switched: Step = { step, status: "done", detail: `${main} on main` };
