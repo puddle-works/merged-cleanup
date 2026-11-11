@@ -1,0 +1,48 @@
+# Puddle image skeleton (ADR-003). Move to the repo root to use it.
+#
+# Bundles a pinned Swamp release and the puddle's extension. The launcher mounts
+# the user's files at /work and runs `swamp model method run`.
+#
+# Build from the repo root:
+#   podman build -t ghcr.io/puddle-works/<app>:<version> .
+
+FROM debian:bookworm-slim
+
+ARG SWAMP_VERSION=stable
+
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends ca-certificates curl tar gzip \
+ && rm -rf /var/lib/apt/lists/*
+
+RUN curl -fsSL https://swamp-club.com/install.sh \
+      | sh -s -- -V "${SWAMP_VERSION}" -d /usr/local/bin \
+ && swamp --version
+
+RUN useradd --create-home --home-dir /home/puddle --uid 1000 puddle \
+ && mkdir -p /opt/puddle/repo /work \
+ && chown -R puddle /opt/puddle /work
+
+USER puddle
+ENV HOME=/home/puddle
+WORKDIR /opt/puddle/repo
+
+RUN swamp repo init . --tool none --json >/dev/null
+
+# TODO: copy the puddle's extension.
+COPY --chown=puddle extensions/models/TODO.ts extensions/models/TODO.ts
+
+# TODO: create the model instance and warm Swamp's extension bundle, so a build
+# fails if the extension does not load under this Swamp release.
+# RUN swamp model create @puddleworks/TODO TODO --json >/dev/null
+
+# The launcher runs the container as the host user, so Swamp's state must be
+# writable by any UID.
+USER root
+RUN chmod -R a+rwX /home/puddle /opt/puddle
+USER puddle
+
+LABEL org.opencontainers.image.title="TODO" \
+      org.opencontainers.image.source="https://github.com/puddle-works/TODO"
+LABEL org.puddle.swamp-version="${SWAMP_VERSION}"
+
+ENTRYPOINT ["swamp"]
