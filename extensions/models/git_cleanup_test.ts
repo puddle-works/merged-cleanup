@@ -51,9 +51,10 @@ async function call(
   return written[0];
 }
 
-Deno.test("the extension adds three methods to @swamp/git, none named as puddlerouter's", () => {
+Deno.test("the extension adds four methods to @swamp/git, none named as puddlerouter's", () => {
   assertEquals(extension.type, "@swamp/git");
   assertEquals(Object.keys(methods).sort(), [
+    "cleanup_branch_heads",
     "cleanup_delete_branch",
     "cleanup_delete_remote_branch",
     "cleanup_worktree_list",
@@ -100,6 +101,35 @@ Deno.test("cleanup_worktree_list lists the repo's worktrees", async () => {
   assertEquals(list[1].head, wt.head);
   assertEquals(list[1].branch, "me/x");
   assertEquals(list[1].locked, true);
+});
+
+Deno.test("cleanup_branch_heads lists local branches and origin's, each with its head, and changes nothing", async () => {
+  await using r = await repos();
+  const wt = await worktreePr(r, "me/feature");
+  await ok(r.main, "worktree", "remove", wt.path);
+  await ok(r.main, "branch", "-q", "me/local-only", r.trunk);
+  const trunk = await ok(r.main, "rev-parse", r.trunk);
+  const before = await ok(r.main, "for-each-ref");
+  const out = await call("cleanup_branch_heads", r.main);
+  const byName = (l: unknown) =>
+    Object.fromEntries(
+      (l as { name: string; head: string }[]).map((b) => [b.name, b.head]),
+    );
+  assertEquals(byName(out.local), {
+    [r.trunk]: trunk,
+    "me/feature": wt.head,
+    "me/local-only": trunk,
+  });
+  // origin's come from ls-remote, not from (maybe stale) tracking refs.
+  await ok(r.other, "push", "-q", "origin", "--delete", "me/feature");
+  const after = await call("cleanup_branch_heads", r.main);
+  assertEquals(byName(after.origin), { [r.trunk]: trunk });
+  assertEquals(await ok(r.main, "for-each-ref"), before);
+});
+
+Deno.test("cleanup_branch_heads: a folder that is not a git repo is an error", async () => {
+  await using r = await repos();
+  await assertRejects(() => call("cleanup_branch_heads", r.root));
 });
 
 Deno.test("cleanup_delete_branch deletes a merged branch with -d", async () => {

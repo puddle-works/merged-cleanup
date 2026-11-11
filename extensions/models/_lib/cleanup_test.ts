@@ -216,10 +216,12 @@ Deno.test("AC3: clean on a worktree with commits after the head changes nothing 
   );
 });
 
-Deno.test("AC3: clean on a PR with no worktree at its head changes nothing and says why", async () => {
+Deno.test("AC3: clean on a PR with no worktree and no branch at its head changes nothing and says why", async () => {
   await using r = await repos();
   const wt = await mergedPr(r);
   await ok(r.main, "worktree", "remove", wt.path);
+  await ok(r.main, "branch", "-q", "-D", "me/feature");
+  await ok(r.other, "push", "-q", "origin", "--delete", "me/feature");
   await cleanChangesNothing(
     r,
     { 22: merged(wt.head) },
@@ -340,6 +342,102 @@ Deno.test("AC6: worktree and local branch already gone when clean acts: already 
   assertEquals(summarise(items, "clean"), "#22 cleaned up");
 });
 
+Deno.test("AC6: worktree and local branch removed before check (by Orca): origin's branch is still deleted", async () => {
+  await using r = await repos();
+  const wt = await mergedPr(r);
+  await ok(r.main, "worktree", "remove", wt.path);
+  await ok(r.main, "branch", "-q", "-D", "me/feature");
+  const run = fakeSwamp(r.main, { 22: merged(wt.head) });
+  const [checked] = await check({ pr: 22, prs: "" }, run);
+  assertEquals(checked.verdict, "clean");
+  assertEquals(checked.worktree, "");
+  assertEquals(checked.branch, "me/feature");
+  assertMatch(checked.reason, /worktree is already gone/);
+  const items = await clean({ pr: 22, prs: "" }, run);
+  assertEquals(statuses(items[0]), {
+    "remove worktree": "already done",
+    "delete local branch": "already done",
+    "delete origin branch": "done",
+    "fast-forward main": "done",
+  });
+  assertEquals(await branchExists(r.origin, "me/feature"), false);
+  assertEquals(summarise(items, "clean"), "#22 cleaned up");
+});
+
+Deno.test("AC6: worktree removed before check, local branch left: both branches deleted", async () => {
+  await using r = await repos();
+  const wt = await mergedPr(r);
+  await ok(r.main, "worktree", "remove", wt.path);
+  const items = await clean(
+    { pr: 22, prs: "" },
+    fakeSwamp(r.main, { 22: merged(wt.head) }),
+  );
+  assertEquals(statuses(items[0]), {
+    "remove worktree": "already done",
+    "delete local branch": "done",
+    "delete origin branch": "done",
+    "fast-forward main": "done",
+  });
+  assertEquals(await branchExists(r.main, "me/feature"), false);
+  assertEquals(await branchExists(r.origin, "me/feature"), false);
+});
+
+Deno.test("clean run again after origin's delete failed finishes it, the rest already done", async () => {
+  await using r = await repos();
+  const wt = await mergedPr(r);
+  const real = fakeSwamp(r.main, { 22: merged(wt.head) });
+  const first = await clean(
+    { pr: 22, prs: "" },
+    (call) =>
+      call.method === "cleanup_delete_remote_branch"
+        ? Promise.resolve({
+          ok: false,
+          error: {
+            message: "fatal: unable to access origin: Could not resolve host",
+          },
+        })
+        : real(call),
+  );
+  assertEquals(statuses(first[0])["delete origin branch"], "failed");
+  assertEquals(await branchExists(r.origin, "me/feature"), true);
+  const again = await clean({ pr: 22, prs: "" }, real);
+  assertEquals(statuses(again[0]), {
+    "remove worktree": "already done",
+    "delete local branch": "already done",
+    "delete origin branch": "done",
+    "fast-forward main": "already done",
+  });
+  assertEquals(await branchExists(r.origin, "me/feature"), false);
+});
+
+Deno.test("worktree gone but the local branch has commits after the head: ahead, nothing touched", async () => {
+  await using r = await repos();
+  const wt = await mergedPr(r);
+  await Deno.writeTextFile(`${wt.path}/more.txt`, "more");
+  await ok(wt.path, "add", "-A");
+  await ok(wt.path, "commit", "-q", "-m", "more work");
+  await ok(r.main, "worktree", "remove", wt.path);
+  await cleanChangesNothing(
+    r,
+    { 22: merged(wt.head) },
+    "ahead",
+    /me\/feature.*commits after/,
+  );
+});
+
+Deno.test("worktree gone and two branches at the head: absent, neither touched", async () => {
+  await using r = await repos();
+  const wt = await mergedPr(r);
+  await ok(r.main, "worktree", "remove", wt.path);
+  await ok(r.main, "branch", "-q", "me/next", "me/feature");
+  await cleanChangesNothing(
+    r,
+    { 22: merged(wt.head) },
+    "absent",
+    /me\/feature, me\/next/,
+  );
+});
+
 Deno.test("AC6: origin's branch already gone: already done", async () => {
   await using r = await repos();
   const wt = await mergedPr(r);
@@ -405,6 +503,28 @@ Deno.test("AC7: main can't fast-forward: left untouched, pull skipped, other ste
   assertEquals(await ok(r.main, "rev-parse", "main"), mainBefore);
   assertEquals(await ok(r.main, "status", "--porcelain"), "");
   assertEquals(statuses(items[0])["delete local branch"], "done");
+});
+
+Deno.test("a pull that fails for another reason (network) is failed, not skipped", async () => {
+  await using r = await repos();
+  const wt = await mergedPr(r);
+  const real = fakeSwamp(r.main, { 22: merged(wt.head) });
+  const items = await clean(
+    { pr: 22, prs: "" },
+    (call) =>
+      call.method === "pull"
+        ? Promise.resolve({
+          ok: false,
+          error: {
+            message:
+              "git pull failed (exit 128): fatal: unable to access 'https://github.com/acme/widgets.git/': Could not resolve host: github.com",
+          },
+        })
+        : real(call),
+  );
+  const s = items[0].steps.find((s) => s.step === "fast-forward main")!;
+  assertEquals(s.status, "failed");
+  assertMatch(s.detail, /Could not resolve host/);
 });
 
 // ---- AC8 --------------------------------------------------------------------

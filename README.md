@@ -52,20 +52,34 @@ swamp model create @webframp/github github
 
 With no PR named, "the latest 3 merged PRs" are the first 3 of
 `list_prs --state merged` sorted by `updatedAt`, newest first: `list_prs`
-gives no merge time. A PR whose worktree and local branch are already gone is
-`absent` and clean leaves it alone, origin's branch included, as the spec
-(version 2) says; a clean stopped part-way (origin's delete failed) is not
-finished by running clean again. Delete origin's branch by hand then.
+gives no merge time.
+
+A named PR whose worktree is already gone (Orca removed it) but whose branch is
+left, here or on origin, at the PR's head is `clean`: clean reports the
+worktree as already removed and deletes what is left, origin's branch only at
+the PR's head. So running clean again finishes a clean that stopped part-way.
+With more than one branch at the head, none is touched (`absent`); a local
+branch with commits after the head is `ahead`. With no PR named, only PRs with
+a worktree at their head are looked at, as the spec says.
 
 ### How it was checked
 
-- 61 tests on real temporary git repos, with origin a local bare repo. The
+- 69 tests on real temporary git repos, with origin a local bare repo. The
   `@swamp/git` and `@webframp/github` methods it calls are fakes in
   `extensions/models/_lib/fixture_test.ts` that run the same git commands and
   return the same fields as those extensions' code (`@swamp/git`
   2026.10.23.1, `@webframp/github` 2026.11.06.1).
-- A real read-only run (`check` with three PRs, and the workflow) against a
-  real repo, with those extensions installed: it changed no ref or worktree.
+- One real run against a throwaway private GitHub repo, with those extensions
+  installed, on 2026-11-11, deleted afterwards. Three merged PRs: #1 with its
+  worktree at its head (merge commit), #2 squash-merged with its worktree and
+  local branch already removed, and #3 squash-merged with the main checkout on
+  its branch. `check` said clean, clean and primary. `clean` (10 s) did every
+  step: #1 worktree removed, both branches deleted; #2 worktree and local
+  branch already gone, origin's branch deleted; #3 switched to main, both
+  branches deleted; main fast-forwarded. Afterwards there was one worktree,
+  one branch (main, at origin's head) on each side. `clean` again said all
+  three absent and changed nothing, and the latest recipe's workflow said
+  "Nothing to clean up".
 - That a `repoPath` in `context.runModel` arguments overrides the instance's
   own, as the fakes assume, was checked with a probe model against real swamp.
 

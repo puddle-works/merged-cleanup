@@ -1,8 +1,10 @@
 /**
- * Adds three methods to `@swamp/git` that merged-cleanup needs and
+ * Adds four methods to `@swamp/git` that merged-cleanup needs and
  * `@swamp/git` lacks:
  *
  * - `cleanup_worktree_list`: the repo's worktrees (path, HEAD, branch, flags).
+ * - `cleanup_branch_heads`: each local branch and each branch on origin (from
+ *   `git ls-remote`, not tracking refs), with its head. Read-only.
  * - `cleanup_delete_branch`: `git branch -d` (never `-D`); a branch already
  *   gone is "already absent", a refusal (or a repo it can't read) throws with
  *   git's message.
@@ -64,6 +66,26 @@ const WorktreeListSchema = z.object({
   worktrees: z.array(WorktreeSchema),
   listedAt: z.iso.datetime(),
 });
+
+const BranchHeadSchema = z.object({ name: z.string(), head: z.string() });
+
+const BranchHeadsSchema = z.object({
+  repoPath: z.string(),
+  /** Local branches, without `refs/heads/`. */
+  local: z.array(BranchHeadSchema),
+  /** origin's branches as origin has them now. */
+  origin: z.array(BranchHeadSchema),
+  listedAt: z.iso.datetime(),
+});
+
+/** `sha<TAB>refs/heads/name` lines as name and head. */
+function heads(out: string, shaFirst: boolean) {
+  return out.split("\n").filter((l) => l.includes("\t")).map((l) => {
+    const [a, b] = l.split("\t");
+    const [ref, head] = shaFirst ? [b, a] : [a, b];
+    return { name: ref.replace(/^refs\/heads\//, ""), head };
+  });
+}
 
 const BranchDeleteSchema = z.object({
   repoPath: z.string(),
@@ -134,6 +156,13 @@ export const extension = {
       lifetime: "ephemeral" as const,
       garbageCollection: 10,
     },
+    cleanupBranchHeads: {
+      description:
+        "Each local branch and each branch on origin, with its head.",
+      schema: BranchHeadsSchema,
+      lifetime: "ephemeral" as const,
+      garbageCollection: 10,
+    },
     cleanupBranchDelete: {
       description:
         "A local branch deleted with git branch -d, or already gone.",
@@ -168,6 +197,48 @@ export const extension = {
           "cleanupWorktrees",
           "cleanup-worktrees",
           { repoPath, worktrees, listedAt: new Date().toISOString() },
+        );
+        return { dataHandles: [handle] };
+      },
+    },
+    cleanup_branch_heads: {
+      description:
+        "List each local branch and each branch on origin with its head (read-only: git for-each-ref and git ls-remote --heads origin).",
+      arguments: z.object({}),
+      execute: async (_args: Record<string, never>, ctx: Context) => {
+        const repoPath = repoPathOf(ctx);
+        const local = await git(
+          ["for-each-ref", "--format=%(refname)%09%(objectname)", "refs/heads"],
+          repoPath,
+        );
+        if (local.code !== 0) {
+          throw new Error(
+            `git for-each-ref failed (exit ${local.code}): ${local.stderr}`,
+          );
+        }
+        const remote = await git(
+          ["ls-remote", "--heads", "--", "origin"],
+          repoPath,
+        );
+        if (remote.code !== 0) {
+          throw new Error(
+            `git ls-remote failed (exit ${remote.code}): ${remote.stderr}`,
+          );
+        }
+        const data = {
+          repoPath,
+          local: heads(local.stdout, false),
+          origin: heads(remote.stdout, true),
+          listedAt: new Date().toISOString(),
+        };
+        ctx.logger.info("Found {local} local branches and {origin} on origin", {
+          local: data.local.length,
+          origin: data.origin.length,
+        });
+        const handle = await ctx.writeResource(
+          "cleanupBranchHeads",
+          "cleanup-branch-heads",
+          data,
         );
         return { dataHandles: [handle] };
       },

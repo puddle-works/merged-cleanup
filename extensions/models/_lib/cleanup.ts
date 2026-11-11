@@ -116,7 +116,9 @@ export const ItemSchema = z.object({
   /**
    * clean: safe to remove; primary: the main checkout is on the PR's branch;
    * dirty: uncommitted changes; locked: its worktree is locked; ahead: commits
-   * after the PR's head; absent: no worktree at or after its head; open or
+   * after the PR's head; absent: no worktree at or after its head and no one
+   * branch left at it (a clean PR's worktree may be "" when only its branch is
+   * left); open or
    * closed: not merged; error: could not be checked.
    */
   verdict: z.enum(VERDICTS),
@@ -183,6 +185,10 @@ function githubRepo(url: string): string | null {
 const UNKNOWN_COMMIT =
   /not a valid commit name|not a valid object name|bad object|unknown revision/i;
 
+/** git refusing a pull --ff-only because the branches have diverged. */
+const NO_FAST_FORWARD =
+  /not possible to fast-forward|can't be fast-forwarded|diverg/i;
+
 const isMain = (branch: string) => branch === "main" || branch === "master";
 
 function oneLine(text: string, max = 60): string {
@@ -210,24 +216,30 @@ async function isClean(run: RunModel, path: string): Promise<boolean> {
 }
 
 function reasonFor(f: Omit<Finding, "reason">, note: string): string {
-  const place = f.primary
-    ? `the main checkout ${f.worktree}`
-    : `the worktree ${f.worktree}`;
+  const place = !f.worktree
+    ? `the local branch ${f.branch}`
+    : f.primary
+    ? `the main checkout ${f.worktree} (branch ${f.branch})`
+    : `the worktree ${f.worktree} (branch ${f.branch})`;
   switch (f.verdict) {
     case "clean":
+      if (!f.worktree) {
+        return `its worktree is already gone, but branch ${f.branch} is ` +
+          "left; it is deleted with -d, and on origin only at its head";
+      }
       return `the worktree ${f.worktree} (branch ${f.branch}) is at its head ` +
         "with no uncommitted changes, so removing it orphans no commits";
     case "primary":
       return `the main checkout ${f.worktree} is on its branch ${f.branch}, ` +
         "at its head, with no uncommitted changes";
     case "dirty":
-      return `${place} (branch ${f.branch}) has uncommitted changes, which ` +
+      return `${place} has uncommitted changes, which ` +
         "removing it would lose";
     case "locked":
-      return `${place} (branch ${f.branch}) is locked; unlock it first if it ` +
+      return `${place} is locked; unlock it first if it ` +
         "is safe to remove";
     case "ahead":
-      return `${place} (branch ${f.branch}) has commits after ` +
+      return `${place} has commits after ` +
         `#${f.number}'s head, which would be orphaned`;
     case "absent":
       return `no worktree is at ${note ? "" : "or after "}#${f.number}'s ` +
@@ -294,6 +306,55 @@ export async function inspect(
     // failure is the PR's error, not a quiet "no".
     if (UNKNOWN_COMMIT.test(res.error.message)) return false;
     throw new Error(oneLine(res.error.message, 160));
+  };
+  // Each branch's head, here and on origin: read once, and only for a named
+  // PR with no worktree, to find a branch Orca left behind.
+  type Heads = Map<string, string>;
+  let heads: Promise<{ local: Heads; origin: Heads }> | undefined;
+  const toMap = (v: unknown): Heads =>
+    new Map(
+      (Array.isArray(v) ? v : []).map((b: { name?: unknown; head?: unknown }) =>
+        [str(b?.name), str(b?.head)] as [string, string]
+      ),
+    );
+  const branchHeads = () =>
+    heads ??= attrs(run, GIT, "cleanup_branch_heads", at).then((a) => ({
+      local: toMap(a.local),
+      origin: toMap(a.origin),
+    }));
+  /** The PR's branch left at its head with no worktree, if just one is. */
+  const leftBehind = async (
+    base: Omit<
+      Finding,
+      "verdict" | "worktree" | "branch" | "primary" | "reason"
+    >,
+  ): Promise<Finding | undefined> => {
+    const { local, origin } = await branchHeads();
+    const names = [
+      ...new Set(
+        [...local, ...origin].filter(([n, h]) => h === base.head && !isMain(n))
+          .map(([n]) => n),
+      ),
+    ].sort();
+    if (!names.length) return undefined;
+    if (names.length > 1) {
+      return {
+        ...finding(base, "absent", undefined),
+        reason: `no worktree is at #${base.number}'s head, and more than one ` +
+          `branch is (${names.join(", ")}), so none is touched`,
+      };
+    }
+    const gone: Worktree = {
+      path: "",
+      head: local.get(names[0]) ?? base.head,
+      branch: names[0],
+      primary: false,
+      detached: false,
+      bare: false,
+    };
+    const ahead = gone.head !== base.head &&
+      await isAncestor(base.head, gone.head);
+    return finding(base, ahead ? "ahead" : "clean", gone);
   };
   const branched = worktrees.filter((w) =>
     w.head && !w.bare && !w.detached && !isMain(w.branch)
@@ -368,10 +429,13 @@ export async function inspect(
             break;
           }
         }
+        if (ahead) {
+          findings.push(finding(base, "ahead", ahead));
+          continue;
+        }
         findings.push(
-          ahead
-            ? finding(base, "ahead", ahead)
-            : finding(base, "absent", undefined, onMain ? "head on main" : ""),
+          (head ? await leftBehind(base) : undefined) ??
+            finding(base, "absent", undefined, onMain ? "head on main" : ""),
         );
       } catch (e) {
         findings.push(errorFinding(n, e));
@@ -543,12 +607,20 @@ export async function act(
           arguments: { ...at, remote: "origin", branch, ffOnly: true },
         });
         if (!res.ok) {
-          return {
-            step,
-            status: "skipped",
-            detail: `${branch} can't fast-forward to origin/${branch}, so it ` +
-              `was left as it is: ${oneLine(res.error.message, 120)}`,
-          };
+          // Only git refusing to fast-forward is a skip; a network, auth or
+          // lock error is the step failing.
+          return NO_FAST_FORWARD.test(res.error.message)
+            ? {
+              step,
+              status: "skipped",
+              detail: `${branch} can't fast-forward to origin/${branch}, so ` +
+                `it was left as it is: ${oneLine(res.error.message, 120)}`,
+            }
+            : {
+              step,
+              status: "failed",
+              detail: oneLine(res.error.message, 160),
+            };
         }
         return res.resources[0]?.attributes?.alreadyUpToDate === true
           ? { step, status: "already done", detail: `${branch} was up to date` }
