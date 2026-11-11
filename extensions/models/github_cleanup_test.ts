@@ -16,6 +16,7 @@ import {
   listMergedPrs,
   MERGED_PRS_LOOKED_AT,
   parseGhJson,
+  viewPr,
 } from "./github_cleanup.ts";
 
 const methods = Object.assign({}, ...extension.methods) as Record<
@@ -23,9 +24,48 @@ const methods = Object.assign({}, ...extension.methods) as Record<
   unknown
 >;
 
-Deno.test("@webframp/github gets one method, cleanup_merged_prs", () => {
+Deno.test("@webframp/github gets two methods, cleanup_merged_prs and cleanup_pull_request", () => {
   assertEquals(extension.type, "@webframp/github");
-  assertEquals(Object.keys(methods), ["cleanup_merged_prs"]);
+  assertEquals(Object.keys(methods), [
+    "cleanup_merged_prs",
+    "cleanup_pull_request",
+  ]);
+});
+
+Deno.test("viewPr: asks gh for the PR with its head branch's name, and checks the answer", async () => {
+  const asked: string[][] = [];
+  const pr = await viewPr("acme/widgets", 22, (args) => {
+    asked.push(args);
+    return Promise.resolve({
+      number: 22,
+      title: "Add the thing",
+      url: "https://github.com/acme/widgets/pull/22",
+      state: "MERGED",
+      headRefOid: "a".repeat(40),
+      headRefName: "me/feature",
+    });
+  });
+  assertEquals(asked, [[
+    "pr",
+    "view",
+    "22",
+    "--repo",
+    "acme/widgets",
+    "--json",
+    "number,title,url,state,headRefOid,headRefName",
+  ]]);
+  assertEquals(pr.headRefName, "me/feature");
+  assertEquals(pr.state, "MERGED");
+  await assertRejects(
+    () => viewPr("acme/widgets", 22, () => Promise.resolve({ number: 22 })),
+    Error,
+    "PR #22",
+  );
+  await assertRejects(
+    () => viewPr("acme", 22, () => Promise.resolve({})),
+    Error,
+    "owner/name",
+  );
 });
 
 Deno.test("latestMerged: newest merge first, whatever gh's order; unmerged rows dropped", () => {

@@ -35,10 +35,14 @@ import {
   worktreePr,
 } from "./fixture_test.ts";
 
-const merged = (head: string, mergedAt = "2026-11-10T10:00:00Z"): FakePr => ({
+const merged = (
+  pr: { head: string; branch: string },
+  mergedAt = "2026-11-10T10:00:00Z",
+): FakePr => ({
   title: "Add the thing",
   state: "MERGED",
-  headRefOid: head,
+  headRefOid: pr.head,
+  headRefName: pr.branch,
   mergedAt,
   updatedAt: mergedAt,
 });
@@ -103,7 +107,7 @@ Deno.test("AC1: check on a merged PR at its worktree's head says clean and chang
   const before = await snapshot(r);
   const items = await check(
     { pr: 22, prs: "" },
-    fakeSwamp(r.main, { 22: merged(wt.head) }),
+    fakeSwamp(r.main, { 22: merged(wt) }),
   );
   assertEquals(items.length, 1);
   assertEquals(items[0].verdict, "clean");
@@ -120,7 +124,7 @@ Deno.test("AC1: check works from inside the PR's own worktree too", async () => 
   const wt = await mergedPr(r);
   const items = await check(
     { pr: 22, prs: "" },
-    fakeSwamp(wt.path, { 22: merged(wt.head) }),
+    fakeSwamp(wt.path, { 22: merged(wt) }),
   );
   assertEquals(items[0].verdict, "clean");
 });
@@ -132,7 +136,7 @@ Deno.test("AC2: clean removes the worktree, both branches and fast-forwards main
   const wt = await mergedPr(r);
   const items = await clean(
     { pr: 22, prs: "" },
-    fakeSwamp(r.main, { 22: merged(wt.head) }),
+    fakeSwamp(r.main, { 22: merged(wt) }),
   );
   assertEquals(items.length, 1);
   assertEquals(items[0].steps.map((s) => [s.step, s.status]), [
@@ -160,7 +164,7 @@ Deno.test("AC2: a squash-merged branch that tracks origin is deleted with -d", a
   const wt = await mergedPr(r, "squash");
   const items = await clean(
     { pr: 22, prs: "" },
-    fakeSwamp(r.main, { 22: merged(wt.head) }),
+    fakeSwamp(r.main, { 22: merged(wt) }),
   );
   assertEquals(statuses(items[0])["delete local branch"], "done");
   assertEquals(await branchExists(r.main, "me/feature"), false);
@@ -190,7 +194,7 @@ Deno.test("AC3: clean on a dirty worktree changes nothing and says why", async (
   await Deno.writeTextFile(`${wt.path}/wip.txt`, "wip");
   await cleanChangesNothing(
     r,
-    { 22: merged(wt.head) },
+    { 22: merged(wt) },
     "dirty",
     /uncommitted changes/,
   );
@@ -200,7 +204,7 @@ Deno.test("AC3: clean on a locked worktree changes nothing and says why", async 
   await using r = await repos();
   const wt = await mergedPr(r);
   await ok(r.main, "worktree", "lock", wt.path);
-  await cleanChangesNothing(r, { 22: merged(wt.head) }, "locked", /locked/);
+  await cleanChangesNothing(r, { 22: merged(wt) }, "locked", /locked/);
 });
 
 Deno.test("AC3: clean on a worktree with commits after the head changes nothing and says why", async () => {
@@ -211,7 +215,7 @@ Deno.test("AC3: clean on a worktree with commits after the head changes nothing 
   await ok(wt.path, "commit", "-q", "-m", "more");
   await cleanChangesNothing(
     r,
-    { 22: merged(wt.head) },
+    { 22: merged(wt) },
     "ahead",
     /commits after/,
   );
@@ -225,7 +229,7 @@ Deno.test("AC3: clean on a PR with no worktree and no branch at its head changes
   await ok(r.other, "push", "-q", "origin", "--delete", "me/feature");
   await cleanChangesNothing(
     r,
-    { 22: merged(wt.head) },
+    { 22: merged(wt) },
     "absent",
     /no worktree/i,
   );
@@ -237,7 +241,9 @@ Deno.test("AC3: clean on an open or closed PR changes nothing and says why", asy
     const wt = await worktreePr(r, "me/feature");
     await cleanChangesNothing(
       r,
-      { 22: { title: "t", state, headRefOid: wt.head } },
+      {
+        22: { title: "t", state, headRefOid: wt.head, headRefName: wt.branch },
+      },
       state.toLowerCase(),
       /not merged/,
     );
@@ -254,7 +260,12 @@ Deno.test("a PR GitHub gives no state for is an error, not closed", async () => 
   await using r = await repos();
   const wt = await worktreePr(r, "me/feature");
   const noState = { title: "t", headRefOid: wt.head } as unknown as FakePr;
-  await cleanChangesNothing(r, { 22: noState }, "error", /no state/);
+  await cleanChangesNothing(
+    r,
+    { 22: noState },
+    "error",
+    /without its state/,
+  );
 });
 
 // ---- AC4 --------------------------------------------------------------------
@@ -262,7 +273,7 @@ Deno.test("a PR GitHub gives no state for is an error, not closed", async () => 
 Deno.test("AC4: a commit in the worktree after check: not removed, the PR's steps skipped with why", async () => {
   await using r = await repos();
   const wt = await mergedPr(r);
-  const run = fakeSwamp(r.main, { 22: merged(wt.head) });
+  const run = fakeSwamp(r.main, { 22: merged(wt) });
   const found = await inspect([22], run);
   assertEquals(found.findings[0].verdict, "clean");
   await Deno.writeTextFile(`${wt.path}/more.txt`, "more");
@@ -284,7 +295,7 @@ Deno.test("AC4: a commit in the worktree after check: not removed, the PR's step
 Deno.test("AC4: an uncommitted change in the worktree after check: not removed, steps skipped with why", async () => {
   await using r = await repos();
   const wt = await mergedPr(r);
-  const run = fakeSwamp(r.main, { 22: merged(wt.head) });
+  const run = fakeSwamp(r.main, { 22: merged(wt) });
   const found = await inspect([22], run);
   await Deno.writeTextFile(`${wt.path}/wip.txt`, "wip");
   const items = await act(found, run);
@@ -300,7 +311,7 @@ Deno.test("AC4: the main checkout of a primary PR changed after check: not switc
   await ok(r.main, "worktree", "remove", wt.path);
   await ok(r.main, "checkout", "-q", "me/feature");
   await mergeOnOrigin(r, "me/feature");
-  const run = fakeSwamp(r.main, { 22: merged(wt.head) });
+  const run = fakeSwamp(r.main, { 22: merged(wt) });
   const found = await inspect([22], run);
   assertEquals(found.findings[0].verdict, "primary");
   await Deno.writeTextFile(`${r.main}/wip.txt`, "wip");
@@ -318,7 +329,7 @@ Deno.test("AC5: origin's branch moved past the head: not deleted, and clean says
   const later = await pushToOrigin(r, "me/feature");
   const items = await clean(
     { pr: 22, prs: "" },
-    fakeSwamp(r.main, { 22: merged(wt.head) }),
+    fakeSwamp(r.main, { 22: merged(wt) }),
   );
   const s = items[0].steps.find((s) => s.step === "delete origin branch")!;
   assertEquals(s.status, "skipped");
@@ -334,7 +345,7 @@ Deno.test("AC5: origin's branch moved past the head: not deleted, and clean says
 Deno.test("AC6: worktree and local branch already gone when clean acts: already done, the rest carry on", async () => {
   await using r = await repos();
   const wt = await mergedPr(r);
-  const run = fakeSwamp(r.main, { 22: merged(wt.head) });
+  const run = fakeSwamp(r.main, { 22: merged(wt) });
   const found = await inspect([22], run);
   // Orca cleans up late, between check and clean.
   await ok(r.main, "worktree", "remove", wt.path);
@@ -355,7 +366,7 @@ Deno.test("AC6: worktree and local branch removed before check (by Orca): origin
   const wt = await mergedPr(r);
   await ok(r.main, "worktree", "remove", wt.path);
   await ok(r.main, "branch", "-q", "-D", "me/feature");
-  const run = fakeSwamp(r.main, { 22: merged(wt.head) });
+  const run = fakeSwamp(r.main, { 22: merged(wt) });
   const [checked] = await check({ pr: 22, prs: "" }, run);
   assertEquals(checked.verdict, "clean");
   assertEquals(checked.worktree, "");
@@ -378,7 +389,7 @@ Deno.test("AC6: worktree removed before check, local branch left: both branches 
   await ok(r.main, "worktree", "remove", wt.path);
   const items = await clean(
     { pr: 22, prs: "" },
-    fakeSwamp(r.main, { 22: merged(wt.head) }),
+    fakeSwamp(r.main, { 22: merged(wt) }),
   );
   assertEquals(statuses(items[0]), {
     "remove worktree": "already done",
@@ -390,10 +401,54 @@ Deno.test("AC6: worktree removed before check, local branch left: both branches 
   assertEquals(await branchExists(r.origin, "me/feature"), false);
 });
 
+Deno.test("only the PR's own branch: another branch at its head, the PR's gone, is never deleted", async () => {
+  await using r = await repos();
+  const wt = await mergedPr(r);
+  await ok(r.main, "worktree", "remove", wt.path);
+  await ok(r.main, "branch", "-q", "-D", "me/feature");
+  await ok(r.other, "push", "-q", "origin", "--delete", "me/feature");
+  // New work started from the PR's head, before its first commit.
+  await ok(r.main, "branch", "-q", "me/next", wt.head);
+  await ok(r.main, "push", "-q", "-u", "origin", "me/next");
+  const run = fakeSwamp(r.main, { 22: merged(wt) });
+  const [checked] = await check({ pr: 22, prs: "" }, run);
+  assertEquals(checked.verdict, "absent");
+  assertEquals(checked.branch, "");
+  const before = await snapshot(r);
+  const [item] = await clean({ pr: 22, prs: "" }, run);
+  assertEquals(item.steps, []);
+  assertEquals(await snapshot(r), before);
+  assertEquals(await branchExists(r.main, "me/next"), true);
+  assertEquals(await branchExists(r.origin, "me/next"), true);
+});
+
+Deno.test("only the PR's own branch: a worktree on another branch at its head is never removed", async () => {
+  await using r = await repos();
+  const wt = await mergedPr(r);
+  await ok(r.main, "worktree", "remove", wt.path);
+  await ok(r.main, "branch", "-q", "-D", "me/feature");
+  await ok(r.other, "push", "-q", "origin", "--delete", "me/feature");
+  // A stacked PR's worktree, started at the PR's head.
+  const next = `${r.root}/wt-me-next`;
+  await ok(r.main, "worktree", "add", "-q", "-b", "me/next", next, wt.head);
+  const run = fakeSwamp(r.main, { 22: merged(wt) });
+  const [checked] = await check({ pr: 22, prs: "" }, run);
+  assert(checked.verdict !== "clean", checked.reason);
+  assert(checked.worktree !== next, checked.reason);
+  const before = await snapshot(r);
+  const [item] = await clean({ pr: 22, prs: "" }, run);
+  assertEquals(item.steps, []);
+  assertEquals(await snapshot(r), before);
+  assertEquals(await worktreeExists(r, next), true);
+  // With none named, it isn't picked as the latest PR's worktree either.
+  const latest = await check({ pr: 0, prs: "" }, run);
+  assertEquals(latest, []);
+});
+
 Deno.test("clean run again after origin's delete failed finishes it, the rest already done", async () => {
   await using r = await repos();
   const wt = await mergedPr(r);
-  const real = fakeSwamp(r.main, { 22: merged(wt.head) });
+  const real = fakeSwamp(r.main, { 22: merged(wt) });
   const first = await clean(
     { pr: 22, prs: "" },
     (call) =>
@@ -427,23 +482,24 @@ Deno.test("worktree gone but the local branch has commits after the head: ahead,
   await ok(r.main, "worktree", "remove", wt.path);
   await cleanChangesNothing(
     r,
-    { 22: merged(wt.head) },
+    { 22: merged(wt) },
     "ahead",
     /me\/feature.*commits after/,
   );
 });
 
-Deno.test("worktree gone and two branches at the head: absent, neither touched", async () => {
+Deno.test("worktree gone and another branch at the head too: only the PR's own branch is deleted", async () => {
   await using r = await repos();
   const wt = await mergedPr(r);
   await ok(r.main, "worktree", "remove", wt.path);
   await ok(r.main, "branch", "-q", "me/next", "me/feature");
-  await cleanChangesNothing(
-    r,
-    { 22: merged(wt.head) },
-    "absent",
-    /me\/feature, me\/next/,
-  );
+  const run = fakeSwamp(r.main, { 22: merged(wt) });
+  const [checked] = await check({ pr: 22, prs: "" }, run);
+  assertEquals([checked.verdict, checked.branch], ["clean", "me/feature"]);
+  await clean({ pr: 22, prs: "" }, run);
+  assertEquals(await branchExists(r.main, "me/feature"), false);
+  assertEquals(await branchExists(r.origin, "me/feature"), false);
+  assertEquals(await branchExists(r.main, "me/next"), true);
 });
 
 Deno.test("AC6: origin's branch already gone: already done", async () => {
@@ -452,7 +508,7 @@ Deno.test("AC6: origin's branch already gone: already done", async () => {
   await ok(r.other, "push", "-q", "origin", "--delete", "me/feature");
   const items = await clean(
     { pr: 22, prs: "" },
-    fakeSwamp(r.main, { 22: merged(wt.head) }),
+    fakeSwamp(r.main, { 22: merged(wt) }),
   );
   assertEquals(statuses(items[0])["delete origin branch"], "already done");
   assertEquals(statuses(items[0])["remove worktree"], "done");
@@ -464,7 +520,7 @@ Deno.test("a squash-merged branch with no upstream: -d refuses, reported failed,
   await mergeOnOrigin(r, "me/feature", "squash");
   const items = await clean(
     { pr: 22, prs: "" },
-    fakeSwamp(r.main, { 22: merged(wt.head) }),
+    fakeSwamp(r.main, { 22: merged(wt) }),
   );
   const s = items[0].steps.find((s) => s.step === "delete local branch")!;
   assertEquals(s.status, "failed");
@@ -483,7 +539,7 @@ Deno.test("AC7: main checkout has uncommitted changes: left untouched, pull skip
   const mainBefore = await ok(r.main, "rev-parse", "main");
   const items = await clean(
     { pr: 22, prs: "" },
-    fakeSwamp(r.main, { 22: merged(wt.head) }),
+    fakeSwamp(r.main, { 22: merged(wt) }),
   );
   const s = items[0].steps.find((s) => s.step === "fast-forward main")!;
   assertEquals(s.status, "skipped");
@@ -503,7 +559,7 @@ Deno.test("AC7: main can't fast-forward: left untouched, pull skipped, other ste
   const mainBefore = await ok(r.main, "rev-parse", "main");
   const items = await clean(
     { pr: 22, prs: "" },
-    fakeSwamp(r.main, { 22: merged(wt.head) }),
+    fakeSwamp(r.main, { 22: merged(wt) }),
   );
   const s = items[0].steps.find((s) => s.step === "fast-forward main")!;
   assertEquals(s.status, "skipped");
@@ -516,7 +572,7 @@ Deno.test("AC7: main can't fast-forward: left untouched, pull skipped, other ste
 Deno.test("a pull that fails for another reason (network) is failed, not skipped", async () => {
   await using r = await repos();
   const wt = await mergedPr(r);
-  const real = fakeSwamp(r.main, { 22: merged(wt.head) });
+  const real = fakeSwamp(r.main, { 22: merged(wt) });
   const items = await clean(
     { pr: 22, prs: "" },
     (call) =>
@@ -538,7 +594,7 @@ Deno.test("a pull that fails for another reason (network) is failed, not skipped
 Deno.test("a call that throws mid-clean is that step failed, and the rest still reported", async () => {
   await using r = await repos();
   const wt = await mergedPr(r);
-  const real = fakeSwamp(r.main, { 22: merged(wt.head) });
+  const real = fakeSwamp(r.main, { 22: merged(wt) });
   const items = await clean(
     { pr: 22, prs: "" },
     (call) =>
@@ -563,7 +619,7 @@ Deno.test("AC8: primary: the main checkout is switched to main, fast-forwarded, 
   await mergeOnOrigin(r, "me/feature");
   const items = await clean(
     { pr: 22, prs: "" },
-    fakeSwamp(r.main, { 22: merged(wt.head) }),
+    fakeSwamp(r.main, { 22: merged(wt) }),
   );
   assertEquals(items[0].verdict, "primary");
   assertEquals(items[0].steps.map((s) => [s.step, s.status]), [
@@ -589,7 +645,7 @@ Deno.test("AC8: primary in a repo whose default branch is master: switched to ma
   await mergeOnOrigin(r, "me/feature");
   const items = await clean(
     { pr: 22, prs: "" },
-    fakeSwamp(r.main, { 22: merged(wt.head) }),
+    fakeSwamp(r.main, { 22: merged(wt) }),
   );
   assertEquals(items[0].verdict, "primary");
   assertEquals(statuses(items[0]), {
@@ -609,7 +665,7 @@ Deno.test("a PR head git doesn't have is absent, not an error", async () => {
   const unknown = "0123456789abcdef0123456789abcdef01234567";
   const items = await check(
     { pr: 22, prs: "" },
-    fakeSwamp(r.main, { 22: merged(unknown) }),
+    fakeSwamp(r.main, { 22: merged({ head: unknown, branch: "me/feature" }) }),
   );
   assertEquals(items[0].verdict, "absent");
 });
@@ -618,7 +674,7 @@ Deno.test("an is_ancestor call that fails for another reason makes the PR an err
   await using r = await repos();
   const wt = await worktreePr(r, "me/feature");
   await ok(r.main, "worktree", "remove", wt.path);
-  const real = fakeSwamp(r.main, { 22: merged(wt.head) });
+  const real = fakeSwamp(r.main, { 22: merged(wt) });
   const items = await check(
     { pr: 22, prs: "" },
     (call) =>
@@ -647,11 +703,16 @@ Deno.test("AC9: none named: only the latest 3 merged PRs, then only those with a
   for (const br of ["me/a", "me/b", "me/c", "me/d"]) await mergeOnOrigin(r, br);
   await ok(r.main, "worktree", "remove", b.path);
   const prs = {
-    1: merged(a.head, "2026-11-01T00:00:00Z"), // oldest: not in the latest 3
-    2: merged(b.head, "2026-11-04T00:00:00Z"), // latest, but no worktree
-    3: merged(c.head, "2026-11-03T00:00:00Z"),
-    4: merged(d.head, "2026-11-02T00:00:00Z"),
-    5: { title: "open", state: "OPEN" as const, headRefOid: "f".repeat(40) },
+    1: merged(a, "2026-11-01T00:00:00Z"), // oldest: not in the latest 3
+    2: merged(b, "2026-11-04T00:00:00Z"), // latest, but no worktree
+    3: merged(c, "2026-11-03T00:00:00Z"),
+    4: merged(d, "2026-11-02T00:00:00Z"),
+    5: {
+      title: "open",
+      state: "OPEN" as const,
+      headRefOid: "f".repeat(40),
+      headRefName: "me/e",
+    },
   };
   const calls: Calls = [];
   const before = await snapshot(r);
@@ -683,12 +744,12 @@ Deno.test("AC9: the latest by merge time: a comment on an old merged PR doesn't 
   const prs = {
     // Merged long ago, but commented on after the others were merged.
     1: {
-      ...merged(a.head, "2026-10-01T00:00:00Z"),
+      ...merged(a, "2026-10-01T00:00:00Z"),
       updatedAt: "2026-11-09T00:00:00Z",
     },
-    2: merged(b.head, "2026-11-04T00:00:00Z"),
-    3: merged(c.head, "2026-11-03T00:00:00Z"),
-    4: merged(d.head, "2026-11-02T00:00:00Z"),
+    2: merged(b, "2026-11-04T00:00:00Z"),
+    3: merged(c, "2026-11-03T00:00:00Z"),
+    4: merged(d, "2026-11-02T00:00:00Z"),
   };
   const checked = await check({ pr: 0, prs: "" }, fakeSwamp(r.main, prs));
   assertEquals(checked.map((i) => i.number), [2, 3, 4]);
@@ -712,7 +773,7 @@ Deno.test("several named: each PR gets its own verdict and steps, main fast-forw
   const calls: Calls = [];
   const items = await clean(
     { pr: 7, prs: "8" },
-    fakeSwamp(r.main, { 7: merged(a.head), 8: merged(b.head) }, { calls }),
+    fakeSwamp(r.main, { 7: merged(a), 8: merged(b) }, { calls }),
   );
   assertEquals(items.map((i) => [i.number, i.verdict]), [[7, "clean"], [
     8,
@@ -761,7 +822,7 @@ Deno.test("clean only ever leases, never forces: no -D, no --force in any call",
   const calls: Calls = [];
   await clean(
     { pr: 22, prs: "" },
-    fakeSwamp(r.main, { 22: merged(wt.head) }, { calls }),
+    fakeSwamp(r.main, { 22: merged(wt) }, { calls }),
   );
   const text = JSON.stringify(calls);
   assert(!/"force"|-D|--force"/.test(text), text);

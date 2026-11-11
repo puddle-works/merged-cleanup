@@ -57,24 +57,32 @@ activity (a merge is activity) and sorts them by merge time. A PR is missed
 only when more than 30 merged PRs had activity after it was merged; its
 resource says `truncated: true` when gh gave all 30. It also
 adds four `cleanup_` methods to `@swamp/git` (worktree list, branch heads,
-local and origin branch delete), in `extensions/models/git_cleanup.ts`.
+local and origin branch delete), in `extensions/models/git_cleanup.ts`, and
+`cleanup_pull_request` to `@webframp/github`: a PR's state, head and head
+branch name (`get_pull_request_context` gives no branch name).
+
+Only the PR's own branch is ever touched: a worktree or branch counts only when
+its branch has the PR's head branch name, not just because it is at the PR's
+head commit. A new branch started from a merged PR's head, or a stacked PR's
+worktree before its first commit, is never cleaned up.
 
 A named PR whose worktree is already gone (Orca removed it) but whose branch is
 left, here or on origin, at the PR's head is `clean`: clean reports the
 worktree as already removed and deletes what is left, origin's branch only at
 the PR's head. So running clean again finishes a clean that stopped part-way.
-With more than one branch at the head, none is touched (`absent`); a local
-branch with commits after the head is `ahead`. With no PR named, only PRs with
+Another branch at the same head is left alone; a local branch with commits
+after the head is `ahead`. With no PR named, only PRs with
 a worktree at their head are looked at, as the spec says.
 
 ### How it was checked
 
-- 79 tests, most on real temporary git repos, with origin a local bare repo.
+- 82 tests, most on real temporary git repos, with origin a local bare repo.
   The `@swamp/git` and `@webframp/github` built-ins it calls are fakes in
   `extensions/models/_lib/fixture_test.ts` that run the same git commands and
   return the same fields as those extensions' code (`@swamp/git`
   2026.10.23.1, `@webframp/github` 2026.11.06.1). Its own methods run for
-  real, except that `cleanup_merged_prs` is given gh's answer.
+  real, except that `cleanup_merged_prs` and `cleanup_pull_request` are
+  given gh's answer.
 - One real run against a throwaway private GitHub repo, with those extensions
   installed, on 2026-11-11, deleted afterwards. Three merged PRs: #1 with its
   worktree at its head (merge commit), #2 squash-merged with its worktree and
@@ -89,6 +97,9 @@ a worktree at their head are looked at, as the spec says.
 - `cleanup_merged_prs` against real GitHub on 2026-11-11 (a repo with 10
   merged PRs) gave them newest merge first, the same order as
   `gh pr list --state merged --json number,mergedAt` sorted by `mergedAt`.
+- `cleanup_pull_request` against real GitHub on 2026-11-11 gave a merged PR's
+  state, head commit and head branch name, and `check` on that PR (its
+  worktree gone, its branch left) said `clean` for that branch by name.
 - That a `repoPath` in `context.runModel` arguments overrides the instance's
   own, as the fakes assume, was checked with a probe model against real swamp.
 

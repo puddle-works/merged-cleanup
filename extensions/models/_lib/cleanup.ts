@@ -324,30 +324,26 @@ export async function inspect(
     }));
   /** The PR's branch left at its head with no worktree, if just one is. */
   const leftBehind = async (
-    base: Omit<
-      Finding,
-      "verdict" | "worktree" | "branch" | "primary" | "reason"
-    >,
+    base:
+      & Omit<
+        Finding,
+        "verdict" | "worktree" | "branch" | "primary" | "reason"
+      >
+      & { headBranch: string },
   ): Promise<Finding | undefined> => {
     const { local, origin } = await branchHeads();
-    const names = [
-      ...new Set(
-        [...local, ...origin].filter(([n, h]) => h === base.head && !isMain(n))
-          .map(([n]) => n),
-      ),
-    ].sort();
-    if (!names.length) return undefined;
-    if (names.length > 1) {
-      return {
-        ...finding(base, "absent", undefined),
-        reason: `no worktree is at #${base.number}'s head, and more than one ` +
-          `branch is (${names.join(", ")}), so none is touched`,
-      };
+    // Only the PR's own branch, never another one at the same commit.
+    const name = base.headBranch;
+    if (
+      !name || isMain(name) ||
+      (local.get(name) !== base.head && origin.get(name) !== base.head)
+    ) {
+      return undefined;
     }
     const gone: Worktree = {
       path: "",
-      head: local.get(names[0]) ?? base.head,
-      branch: names[0],
+      head: local.get(name) ?? base.head,
+      branch: name,
       primary: false,
       detached: false,
       bare: false,
@@ -361,11 +357,11 @@ export async function inspect(
   );
 
   const lookUp = async (n: number) => {
-    const c = (await attrs(run, GITHUB, "get_pull_request_context", {
+    // Our own method: get_pull_request_context gives no head branch name.
+    const c = (await attrs(run, GITHUB, "cleanup_pull_request", {
       repo,
       number: n,
-      maxComments: 1,
-    })).context as Record<string, unknown> | undefined;
+    })).pullRequest as Record<string, unknown> | undefined;
     const state = str(c?.state).toUpperCase();
     // A PR with no state (or one GitHub has not told us of) is an error, never
     // taken for closed.
@@ -378,6 +374,8 @@ export async function inspect(
       url: str(c?.url),
       state,
       head: str(c?.headRefOid),
+      /** The PR's own branch: the only one cleanup may touch. */
+      headBranch: str(c?.headRefName),
     };
   };
 
@@ -418,7 +416,8 @@ export async function inspect(
           continue;
         }
         const head = base.head;
-        const w = head ? branched.find((w) => w.head === head) : undefined;
+        const own = branched.filter((w) => w.branch === base.headBranch);
+        const w = head ? own.find((w) => w.head === head) : undefined;
         if (w) {
           findings.push(await atHead(base, w));
           continue;
@@ -428,7 +427,7 @@ export async function inspect(
         const onMain = head ? await isAncestor(head, mainRef) : false;
         let ahead: Worktree | undefined;
         for (
-          const c of head && !onMain ? branched.slice(0, MAX_ANCESTRY) : []
+          const c of head && !onMain ? own.slice(0, MAX_ANCESTRY) : []
         ) {
           if (await isAncestor(head, c.head)) {
             ahead = c;
@@ -458,7 +457,9 @@ export async function inspect(
       try {
         const base = settled(bases[i]);
         const w = base.head
-          ? branched.find((w) => w.head === base.head)
+          ? branched.find((w) =>
+            w.head === base.head && w.branch === base.headBranch
+          )
           : undefined;
         if (base.state === "MERGED" && w) findings.push(await atHead(base, w));
       } catch (e) {

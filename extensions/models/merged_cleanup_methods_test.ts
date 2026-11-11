@@ -57,7 +57,12 @@ async function mergedPr() {
   const wt = await worktreePr(r, "me/feature");
   await mergeOnOrigin(r, "me/feature");
   const run = fakeSwamp(r.main, {
-    22: { title: "Add the thing", state: "MERGED", headRefOid: wt.head },
+    22: {
+      title: "Add the thing",
+      state: "MERGED",
+      headRefOid: wt.head,
+      headRefName: wt.branch,
+    },
   });
   return { r, wt, run };
 }

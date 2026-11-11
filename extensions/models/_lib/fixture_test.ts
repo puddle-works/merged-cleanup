@@ -10,7 +10,7 @@
  * @module
  */
 import { extension } from "../git_cleanup.ts";
-import { listMergedPrs } from "../github_cleanup.ts";
+import { listMergedPrs, viewPr } from "../github_cleanup.ts";
 import type { ModelCall, RunModel, RunResult } from "./cleanup.ts";
 
 /** One answer `@webframp/github` gives for a PR. */
@@ -18,6 +18,8 @@ export interface FakePr {
   title: string;
   state: "MERGED" | "OPEN" | "CLOSED";
   headRefOid: string;
+  /** The PR's own branch, as GitHub names it. */
+  headRefName: string;
   /** When it was merged; only a merged PR has one. */
   mergedAt?: string;
   /** Its last activity: the merge, or a comment after it. */
@@ -125,7 +127,7 @@ export async function worktreePr(
   r: Repos,
   name: string,
   opts: { upstream?: boolean } = {},
-): Promise<{ path: string; head: string }> {
+): Promise<{ path: string; head: string; branch: string }> {
   const path = `${r.root}/wt-${name.replace(/\//g, "-")}`;
   await ok(r.main, "worktree", "add", "-q", "-b", name, path, r.trunk);
   await Deno.writeTextFile(`${path}/${name.replace(/\//g, "-")}.txt`, name);
@@ -133,7 +135,7 @@ export async function worktreePr(
   await ok(path, "commit", "-q", "-m", `work on ${name}`);
   if (opts.upstream === false) await ok(path, "push", "-q", "origin", name);
   else await ok(path, "push", "-q", "-u", "origin", name);
-  return { path, head: await ok(path, "rev-parse", "HEAD") };
+  return { path, head: await ok(path, "rev-parse", "HEAD"), branch: name };
 }
 
 /** Merge `branch` into main on origin, as GitHub's merge button does. */
@@ -330,19 +332,24 @@ export function fakeSwamp(
     if (call.modelType === "@webframp/github") {
       const a = call.arguments ?? {};
       if (a.repo !== REPO) return failed(`no repo ${a.repo}`);
-      if (call.method === "get_pull_request_context") {
+      if (call.method === "cleanup_pull_request") {
+        // gh's answer, through the real method's code.
         const pr = prs[Number(a.number)];
-        if (!pr) {
-          return failed(`Could not resolve to a PullRequest ${a.number}`);
-        }
-        return okResult({
-          context: {
+        const view = await viewPr(String(a.repo), Number(a.number), () => {
+          if (!pr) {
+            throw new Error(`Could not resolve to a PullRequest ${a.number}`);
+          }
+          return Promise.resolve({
+            number: Number(a.number),
             title: pr.title,
             url: `https://github.com/${REPO}/pull/${a.number}`,
             state: pr.state,
             headRefOid: pr.headRefOid,
-          },
-        });
+            headRefName: pr.headRefName,
+          });
+        }).catch((e: Error) => e);
+        if (view instanceof Error) return failed(view.message);
+        return okResult({ pullRequest: view });
       }
       if (call.method === "cleanup_merged_prs") {
         // gh's answer, latest activity first, through the real method's code.
