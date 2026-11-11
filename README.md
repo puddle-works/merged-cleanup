@@ -42,7 +42,7 @@ Test it:
 ```bash
 DENO=$(swamp doctor extensions --json | jq -r '.denoPath')
 $DENO check extensions/models/merged_cleanup.ts
-$DENO test extensions/models/merged_cleanup_test.ts
+$DENO test --allow-read --allow-write --allow-run=git extensions/models/
 ```
 
 CI (`.github/workflows/ci.yml`) runs the tests and a publish dry run. The

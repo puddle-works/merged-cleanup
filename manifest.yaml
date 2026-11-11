@@ -5,10 +5,19 @@ description: "For merged PRs in the repository of the current directory, report 
 repository: "https://github.com/puddle-works/merged-cleanup"
 license: MIT
 visibility: private
+labels:
+  - effects-write
+  - puddlerouter-recipe
 additionalFiles:
   - README.md
   - LICENSE
 models:
   - merged_cleanup.ts
+  - git_cleanup.ts
 workflows:
   - workflow-merged-cleanup.yaml
+  - workflow-merged-cleanup-recipe.yaml
+  - workflow-merged-cleanup-latest-recipe.yaml
+dependencies:
+  - "@swamp/git"
+  - "@webframp/github"

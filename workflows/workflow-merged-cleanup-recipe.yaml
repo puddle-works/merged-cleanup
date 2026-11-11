@@ -1,0 +1,29 @@
+id: 381a1207-bf67-448f-8bbd-f61e714b3a15
+name: "@puddleworks/merged-cleanup-recipe"
+description: >-
+  Clean up after the merged PR a turn names ("22 is merged", "pr 22 is
+  merged", "#22 merged"): remove its worktree, delete its branch locally and
+  on origin, and fast-forward main, each only when it is safe. The puddlerouterRecipe tag is the recipe @puddleworks/recipes reads: the phrasing it matches (held to the whole turn), the data to show and how. It calls the same method as this workflow's one step, so running this workflow by hand does the same clean-up. clean writes, so the recipe asks once before it runs.
+version: 1
+tags:
+  maxReruns: "3"
+  maxWallClock: "1m"
+  puddlerouterRecipe: '{"id":"merged-cleanup","pattern":"(?:pr ?)?#?(\\d{1,6}) (?:is |was |has been )?merged[.!]?","inputs":{"pr":{"capture":1,"as":"int"}},"extension":"@puddleworks/merged-cleanup","dataName":"clean","each":{"path":"items","line":"{line}"},"template":"{lines}\n{summary}","empty":"Nothing to clean up.","source":{"url":"http://127.0.0.1:3002/requests/2c4c963a-b14d-403f-9b1f-2bdabbc71c19","version":2}}'
+inputs:
+  type: object
+  properties:
+    pr:
+      type: integer
+      description: The merged PR's number.
+  required:
+    - pr
+jobs:
+  - name: main
+    steps:
+      - name: clean
+        task:
+          type: model_method
+          modelIdOrName: merged-cleanup-model
+          methodName: clean
+          inputs:
+            pr: ${{ inputs.pr }}

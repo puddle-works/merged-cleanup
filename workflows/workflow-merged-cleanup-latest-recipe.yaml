@@ -1,0 +1,18 @@
+id: 4872f7ae-4870-4e56-8f8c-421fc2ff2fb7
+name: "@puddleworks/merged-cleanup-latest-recipe"
+description: >-
+  Clean up after a bare "merged": the latest 3 merged PRs that still have a
+  worktree at their head, each only when it is safe. The puddlerouterRecipe tag is the recipe @puddleworks/recipes reads: the phrasing it matches (held to the whole turn), the data to show and how. It calls the same method as this workflow's one step, so running this workflow by hand does the same clean-up. clean writes, so the recipe asks once before it runs.
+version: 1
+tags:
+  maxReruns: "3"
+  maxWallClock: "1m"
+  puddlerouterRecipe: '{"id":"merged-cleanup-latest","pattern":"merged[.!]?","extension":"@puddleworks/merged-cleanup","dataName":"clean","each":{"path":"items","line":"{line}"},"template":"{lines}\n{summary}","empty":"Nothing to clean up.","source":{"url":"http://127.0.0.1:3002/requests/2c4c963a-b14d-403f-9b1f-2bdabbc71c19","version":2}}'
+jobs:
+  - name: main
+    steps:
+      - name: clean
+        task:
+          type: model_method
+          modelIdOrName: merged-cleanup-model
+          methodName: clean
