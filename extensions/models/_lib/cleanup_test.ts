@@ -18,6 +18,7 @@ import {
   clean,
   inspect,
   type Item,
+  ItemSchema,
   prNumbers,
   summarise,
 } from "./cleanup.ts";
@@ -486,6 +487,36 @@ Deno.test("worktree gone but the local branch has commits after the head: ahead,
     "ahead",
     /me\/feature.*commits after/,
   );
+});
+
+Deno.test("a worktree on the PR's branch but behind its head, origin at the head: absent, nothing touched", async () => {
+  await using r = await repos();
+  const wt = await mergedPr(r);
+  await ok(wt.path, "reset", "-q", "--hard", "HEAD~1");
+  const run = fakeSwamp(r.main, { 22: merged(wt) });
+  const [checked] = await check({ pr: 22, prs: "" }, run);
+  assertEquals([checked.verdict, checked.worktree], ["absent", wt.path]);
+  assertMatch(checked.reason, /behind #22's head/);
+  await cleanChangesNothing(
+    r,
+    { 22: merged(wt) },
+    "absent",
+    /behind #22's head/,
+  );
+  assertEquals(await branchExists(r.origin, "me/feature"), true);
+});
+
+Deno.test("items carry only the fields ItemSchema names", async () => {
+  await using r = await repos();
+  const wt = await mergedPr(r);
+  const run = fakeSwamp(r.main, { 22: merged(wt), 23: merged(wt) });
+  for (const i of await check({ pr: 22, prs: "" }, run)) {
+    ItemSchema.strict().parse(i);
+  }
+  await ok(r.main, "worktree", "remove", wt.path);
+  for (const i of await clean({ pr: 22, prs: "" }, run)) {
+    ItemSchema.strict().parse(i);
+  }
 });
 
 Deno.test("worktree gone and another branch at the head too: only the PR's own branch is deleted", async () => {

@@ -71,12 +71,13 @@ left, here or on origin, at the PR's head is `clean`: clean reports the
 worktree as already removed and deletes what is left, origin's branch only at
 the PR's head. So running clean again finishes a clean that stopped part-way.
 Another branch at the same head is left alone; a local branch with commits
-after the head is `ahead`. With no PR named, only PRs with
+after the head is `ahead`. A worktree on the PR's branch but behind its head
+is `absent`, and nothing is touched. With no PR named, only PRs with
 a worktree at their head are looked at, as the spec says.
 
 ### How it was checked
 
-- 82 tests, most on real temporary git repos, with origin a local bare repo.
+- 84 tests, most on real temporary git repos, with origin a local bare repo.
   The `@swamp/git` and `@webframp/github` built-ins it calls are fakes in
   `extensions/models/_lib/fixture_test.ts` that run the same git commands and
   return the same fields as those extensions' code (`@swamp/git`

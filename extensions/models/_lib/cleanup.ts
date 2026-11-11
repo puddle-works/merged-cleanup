@@ -242,6 +242,10 @@ function reasonFor(f: Omit<Finding, "reason">, note: string): string {
       return `${place} has commits after ` +
         `#${f.number}'s head, which would be orphaned`;
     case "absent":
+      if (note === "behind") {
+        return `${place} is behind #${f.number}'s head, not at or after it; ` +
+          "it is left as is";
+      }
       return `no worktree is at ${note ? "" : "or after "}#${f.number}'s ` +
         "head; it may be cleaned up already";
     case "open":
@@ -258,8 +262,12 @@ function finding(
   w: Worktree | undefined,
   note = "",
 ): Finding {
+  // The PR's branch name is only for finding its worktree; items leave it out.
+  const { headBranch: _headBranch, ...rest } = base as typeof base & {
+    headBranch?: string;
+  };
   const f = {
-    ...base,
+    ...rest,
     verdict,
     worktree: w?.path ?? "",
     branch: w?.branch ?? "",
@@ -436,6 +444,12 @@ export async function inspect(
         }
         if (ahead) {
           findings.push(finding(base, "ahead", ahead));
+          continue;
+        }
+        // A worktree on the PR's branch, at neither its head nor after it, is
+        // not the PR's to clean up: say so, and never take its branch.
+        if (own.length) {
+          findings.push(finding(base, "absent", own[0], "behind"));
           continue;
         }
         findings.push(
